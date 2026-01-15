@@ -524,6 +524,10 @@ class ExperimentRunner:
         callbacks: list[pl.Callback] = []
         repeat_dir = ckpt_dir
 
+        # Use text-based progress bar to avoid widget errors in notebooks
+        from pytorch_lightning.callbacks import TQDMProgressBar
+        callbacks.append(TQDMProgressBar(refresh_rate=1))
+
         # Save the initial model state before any training
         if self.config.training.save_initial_state:
             callbacks.append(
