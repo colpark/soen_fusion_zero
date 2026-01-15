@@ -1,3 +1,26 @@
+# ==============================================================================
+# PulseNet SOEN Model Specification
+# ==============================================================================
+# Architecture: 1D → 5D (SingleDendrite) → 2D (Output)
+# Task: Binary classification - distinguish one-pulse vs two-pulse signals
+# ==============================================================================
+#
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║                        NOISE CONFIGURATION: DISABLED                       ║
+# ╠═══════════════════════════════════════════════════════════════════════════╣
+# ║  This model runs with NO NOISE INJECTION (ideal conditions).              ║
+# ║                                                                           ║
+# ║  All noise parameters are set to 0.0:                                     ║
+# ║    • phi (flux noise)         = 0.0                                       ║
+# ║    • s (state noise)          = 0.0                                       ║
+# ║    • g (source function)      = 0.0                                       ║
+# ║    • bias_current             = 0.0                                       ║
+# ║    • j (connection weights)   = 0.0                                       ║
+# ║                                                                           ║
+# ║  To enable hardware-realistic noise, set non-zero values in the           ║
+# ║  'noise' and 'perturb' sections of each layer/connection.                 ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+#
 simulation:
   dt: 200.0
   dt_learnable: false

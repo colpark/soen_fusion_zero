@@ -9,6 +9,30 @@
 # Key insight: Output connection (J_1_to_2) is LEARNABLE to enable gradient flow
 # and effective training. See tutorial 02 for why this matters.
 # ==============================================================================
+#
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║                        NOISE CONFIGURATION: DISABLED                       ║
+# ╠═══════════════════════════════════════════════════════════════════════════╣
+# ║  This model runs with NO NOISE INJECTION (ideal conditions).              ║
+# ║                                                                           ║
+# ║  All noise parameters are set to 0.0:                                     ║
+# ║    • phi (flux noise)         = 0.0                                       ║
+# ║    • s (state noise)          = 0.0                                       ║
+# ║    • g (source function)      = 0.0                                       ║
+# ║    • bias_current             = 0.0                                       ║
+# ║    • j (connection weights)   = 0.0                                       ║
+# ║                                                                           ║
+# ║  To enable hardware-realistic noise, set non-zero values in the           ║
+# ║  'noise' and 'perturb' sections of each layer/connection.                 ║
+# ║                                                                           ║
+# ║  Example for realistic noise:                                             ║
+# ║    noise:                                                                 ║
+# ║      phi: 0.01        # 1% flux noise (thermal fluctuations)              ║
+# ║      s: 0.005         # 0.5% state noise                                  ║
+# ║      bias_current: 0.02                                                   ║
+# ║      relative: true   # Scale relative to signal magnitude                ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+#
 
 simulation:
   dt: 100.0                    # Timestep for integration
