@@ -524,10 +524,6 @@ class ExperimentRunner:
         callbacks: list[pl.Callback] = []
         repeat_dir = ckpt_dir
 
-        # Use text-based progress bar to avoid widget errors in notebooks
-        from pytorch_lightning.callbacks import TQDMProgressBar
-        callbacks.append(TQDMProgressBar(refresh_rate=1))
-
         # Save the initial model state before any training
         if self.config.training.save_initial_state:
             callbacks.append(
@@ -1295,7 +1291,8 @@ class ExperimentRunner:
             "gradient_clip_algorithm": self.config.training.gradient_clip_algorithm,
             "log_every_n_steps": self.config.logging.log_freq,
             "reload_dataloaders_every_n_epochs": reload_every_epoch,
-            "enable_progress_bar": True,  # Enable progress bar for better visibility during training
+            # Disable progress bar if SOEN_NO_PROGRESS_BAR is set (avoids widget errors in notebooks)
+            "enable_progress_bar": not bool(os.environ.get("SOEN_NO_PROGRESS_BAR", "")),
         }
         # Optional distributed settings from config: num_nodes, strategy
         try:
