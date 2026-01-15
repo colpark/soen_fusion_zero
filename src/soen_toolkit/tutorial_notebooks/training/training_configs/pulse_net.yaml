@@ -10,13 +10,13 @@ seed: 1
 training:
   # --- Basic Settings ---
   batch_size: 64                # Number of samples per batch.
-  max_epochs: 10              # Maximum number of training epochs.
+  max_epochs: 50              # Maximum number of training epochs (increased for better convergence).
 
   # --- Compute & Hardware Settings (for PyTorch Lightning Trainer) ---
-  accelerator: "cpu"             # "auto", "cpu", "gpu", "mps", "tpu"...
+  accelerator: "auto"            # "auto", "cpu", "gpu", "mps", "tpu"... (auto will use GPU if available)
   precision: "32-true"            # "32-true" (standard), "16-mixed" (for faster GPU training).
-  devices: "auto"                 # "auto", 1 (for 1 GPU), [0, 1] (for specific GPUs).
-  num_workers: 0                  # Number of CPU workers for data loading. Set to 0 for debugging.
+  devices: 1                      # Use 1 GPU (set to "auto" or [0,1] for multi-GPU).
+  num_workers: 4                  # Number of CPU workers for data loading. Set to 0 for debugging.
   deterministic: false             # For reproducibility. May impact performance slightly.
 
   # num_repeats: 100 # if you have this turned on then it will train the model N times, with different seeds and fresh random re-builds of the base model
@@ -24,7 +24,7 @@ training:
   # --- Optimizer ---
   optimizer:
     name: "adam"                 # Options: "adamw", "adam", "lion", "sgd", "rmsprop", or muon, but that one has not worked well so far
-    lr: 0.0001                     # Base learning rate. Will be controlled by the scheduler.
+    lr: 0.001                     # Base learning rate (increased for faster convergence).
 
   # --- Loss Functions ---
   # Define one or more weighted loss components.
