@@ -1,0 +1,109 @@
+# ==============================================================================
+# MNIST SOEN Training Configuration
+# ==============================================================================
+# Trains a SOEN model on MNIST digit classification
+#
+# Architecture: 28D input → 128D SingleDendrite → 10D output
+# Input format: MNIST images as 28-timestep sequences (28 pixels per step)
+# ==============================================================================
+
+description: "MNIST digit classification with SOEN"
+seed: 42
+
+# ==============================================================================
+# Training Configuration
+# ==============================================================================
+training:
+  # --- Basic Settings ---
+  batch_size: 64
+  max_epochs: 30
+
+  # --- Compute & Hardware Settings ---
+  accelerator: "auto"          # Use GPU if available
+  precision: "32-true"
+  devices: "auto"
+  num_workers: 4               # DataLoader workers
+  deterministic: false
+
+  # --- Optimizer ---
+  optimizer:
+    name: "adam"
+    lr: 0.001
+    weight_decay: 0.0001       # L2 regularization
+
+  # --- Loss Functions ---
+  losses:
+    - name: cross_entropy
+      weight: 1.0
+      params: {}
+
+# ==============================================================================
+# Data Configuration
+# ==============================================================================
+data:
+  data_path: "training/datasets/mnist_seq28.hdf5"
+  cache_data: true
+  target_seq_len: 28           # 28 rows = 28 timesteps
+
+# ==============================================================================
+# Model Configuration
+# ==============================================================================
+model:
+  base_model_path: "training/test_models/model_specs/MNIST_SOENSpec.yaml"
+  load_exact_model_state: false
+
+  # Time pooling: Take max over time for classification
+  time_pooling:
+    name: "max"
+    params: {scale: 1.0}
+
+  dt: 100                      # Must match model spec
+
+# ==============================================================================
+# Logging Configuration
+# ==============================================================================
+logging:
+  project_dir: "src/soen_toolkit/tutorial_notebooks/training/temp"
+  project_name: "MNIST_SOEN"
+  experiment_name: "MNIST_SingleDendrite_128"
+  group_name: "MNIST"
+
+  metrics:
+    - "accuracy"
+    - "perplexity"
+
+  log_freq: 100
+  log_batch_metrics: true
+  log_level: "WARNING"
+  log_gradients: false
+
+  track_layer_params: true
+  track_connections: true
+
+# ==============================================================================
+# Callbacks Configuration
+# ==============================================================================
+callbacks:
+  # Learning rate scheduler
+  lr_scheduler:
+    type: "cosine"
+    max_lr: 1e-3
+    min_lr: 1e-5
+    warmup_epochs: 2
+    cycle_epochs: 30
+    period_decay: 1.0
+    amplitude_decay: 0.95
+
+  # Early stopping
+  early_stopping:
+    monitor: "val_accuracy"
+    patience: 10
+    mode: "max"
+    min_delta: 0.001
+
+  # Model checkpointing
+  model_checkpoint:
+    monitor: "val_accuracy"
+    mode: "max"
+    save_top_k: 3
+    save_last: true
