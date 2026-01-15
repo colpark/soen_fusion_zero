@@ -1,0 +1,63 @@
+# Example Training Configuration with MLflow Integration
+# Copy this section into your existing training YAML files
+
+# ==============================================================================
+# Logging Configuration with MLflow
+# ==============================================================================
+logging:
+  # Standard SOEN logging settings
+  project_dir: "experiments/"
+  project_name: "SOEN_Experiments"
+  group_name: "My_Experiment_Group"
+  experiment_name: null
+  
+  # TensorBoard (always enabled)
+  log_freq: 50
+  log_batch_metrics: true
+  log_level: "INFO"
+  log_gradients: false
+  track_layer_params: true
+  track_connections: true
+  
+  # Metrics to track
+  metrics:
+    - "accuracy"
+    - "mse"
+    - "perplexity"
+  
+  # MLflow Integration (optional)
+  mlflow_active: true                           # Enable MLflow logging
+  # Experiment derives from logging.project_name; run_name derives from repeat dir
+  mlflow_log_artifacts: true                    # Log .ckpt and .soen files
+  mlflow_tags:                                  # Custom metadata
+    env: prod
+    team_member: your_name
+    model_type: minGRU
+    dataset: GSC
+
+# ==============================================================================
+# Notes on MLflow Integration
+# ==============================================================================
+
+# What gets logged to MLflow:
+# - All metrics from self.log() calls (loss, accuracy, etc.)
+# - Hyperparameters from the training config
+# - Custom tags for organizing runs
+# - Artifacts: checkpoints (.ckpt) and SOEN sidecars (.soen)
+
+# Viewing results:
+# - Open http://YOUR_SERVER_IP:5000/#/experiments
+# E.g: https://mlflow-greatsky.duckdns.org
+# - Compare runs, download artifacts, filter by tags
+# - TensorBoard still works normally alongside MLflow
+
+# Team workflow:
+# 1. Everyone uses the same mlflow_tracking_uri
+# 2. Use different logging.project_name for different MLflow experiments
+# 3. Add team_member tag to identify your runs
+# 4. Use descriptive tags for easy filtering
+
+# Fallback behavior:
+# - If MLflow server is unreachable, training continues normally
+# - Only TensorBoard logging will work
+# - Check logs for MLflow connection warnings

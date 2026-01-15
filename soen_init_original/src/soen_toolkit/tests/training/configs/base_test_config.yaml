@@ -1,0 +1,85 @@
+# Base test configuration for training tests
+# This will be overridden by specific test configs
+description: "Base test configuration for training pipeline tests"
+seed: 42
+
+# ==============================================================================
+# Training Configuration
+# ==============================================================================
+training:
+  # --- Basic Settings ---
+  batch_size: 8                # Small batch for fast tests
+  max_epochs: 2                # Just enough to verify training works
+
+  # --- Compute & Hardware Settings ---
+  accelerator: "cpu"           # Always use CPU for tests
+  precision: "32-true"         # Standard precision
+  devices: "auto"
+  num_workers: 0               # No multiprocessing for tests
+  deterministic: true          # For reproducibility
+
+  # --- Optimizer ---
+  optimizer:
+    name: "adamw"              # Reliable optimizer for tests
+    lr: 0.001                  # Higher LR for faster convergence in tests
+
+  # --- Loss Functions ---
+  # Will be overridden by specific test configs
+  losses:
+    - name: cross_entropy
+      weight: 1.0
+      params: {}
+
+# ==============================================================================
+# Data Configuration  
+# ==============================================================================
+data:
+  # Will be set by individual tests
+  data_path: ""
+  cache_data: true             # Fast loading for small test datasets
+  target_seq_len: 16           # Short sequences for fast tests
+  val_split: 0.2
+  test_split: 0.1
+
+# ==============================================================================
+# Model Configuration
+# ==============================================================================
+model:
+  base_model_path: null        # Will create models programmatically
+  load_exact_model_state: false
+  
+  # Default pooling - will be overridden as needed
+  time_pooling: 
+    name: "final"
+    params: {scale: 1.0}
+
+  dt: 1.0                      # Simple dt for tests
+
+# ==============================================================================
+# Logging Configuration  
+# ==============================================================================
+logging:
+  project_dir: "temp_test_logs"
+  project_name: "TrainingTests"
+  experiment_name: "TestRun"
+  group_name: "UnitTests"
+  
+  metrics:
+    - "accuracy"
+    - "perplexity"
+   
+  log_freq: 10
+  log_batch_metrics: false     # Keep test output clean
+  log_level: "WARNING"         # Reduce noise in tests
+  log_gradients: false
+
+  track_layer_params: false    # Reduce overhead
+  track_connections: false
+
+# ==============================================================================
+# Callbacks Configuration
+# ==============================================================================
+callbacks:
+  lr_scheduler:
+    type: "constant"           # Simple constant LR for tests
+    lr: 0.001

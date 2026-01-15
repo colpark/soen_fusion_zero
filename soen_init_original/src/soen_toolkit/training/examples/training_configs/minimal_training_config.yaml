@@ -1,0 +1,86 @@
+# ==============================================================================
+# SOEN MINIMAL Training Configuration Template
+#
+# This is a beginner-friendly configuration with only the essential settings.
+# All other options will use sensible defaults. Perfect for getting started!
+# ==============================================================================
+
+# Basic experiment info
+description: "My first SOEN training experiment"
+seed: 42
+
+# ==============================================================================
+# Essential Training Settings
+# ==============================================================================
+training:
+  # Task selection
+  paradigm: supervised           # supervised | unsupervised
+  mapping: seq2static            # seq2static | seq2seq | static2seq | static2static
+
+  batch_size: 32
+  max_epochs: 50
+  # Uncomment to enable truncated BPTT with 32-step chunks
+  # use_tbptt: true
+  # tbptt_steps: 32
+  # tbptt_stride: 16   # Optional: stride between chunk starts (smaller => overlap)
+  
+  # Compute & Hardware
+  accelerator: "auto"
+  precision: "32-true"
+  devices: "auto"
+  num_workers: 0
+  deterministic: false
+  
+  # Optimizer
+  optimizer:
+    name: "adam"
+    lr: 0.001
+
+  # Loss function - choose one (classification default)
+  loss:
+    losses:
+      - name: cross_entropy
+        weight: 1.0
+        params: {}
+
+# ==============================================================================
+# Data Configuration
+# ==============================================================================
+data:
+  # UPDATE THIS PATH to point to your dataset
+  data_path: "path/to/your/dataset.hdf5"
+  num_classes: 10
+  val_split: 0.2
+  test_split: 0.1
+  # For seq2seq tasks, leaving target_seq_len unset uses dataset T (no resampling)
+  # To resample, set: target_seq_len: 100
+
+# ==============================================================================
+# Model Configuration  
+# ==============================================================================
+model:
+  # UPDATE THIS PATH to point to your pre-trained SOEN model
+  base_model_path: "path/to/your/base_model.pth"
+  time_pooling: "final"          # Used for seq2static; options: final, max, mean, rms, mean_last_n, mean_range, ewa
+
+# ==============================================================================
+# Logging
+# ==============================================================================
+logging:
+  project_dir: "experiments/"            # Base directory for the entire project
+  project_name: "My_SOEN_Project"
+  metrics:
+    - "accuracy"
+
+# ==============================================================================
+# Quick Start Guide
+# ==============================================================================
+# 1. Update the two file paths above:
+#    - data.data_path: Point to your dataset (.h5 file)
+#    - model.base_model_path: Point to your SOEN model (.pth file)
+# 2. Adjust data.num_classes to match your dataset (assuming classification)
+# 3. For seq2seq tasks (classification or regression), set training.mapping: seq2seq and data.target_seq_len to your dataset T
+# 4. Run training with:
+#    python -m soen_toolkit.training.trainers.experiment your_config.yaml
+# 5. Monitor training in the logs/ directory with `tensorboard --logdir logs/`
+# ============================================================================== 

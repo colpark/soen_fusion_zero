@@ -1,0 +1,441 @@
+# ==============================================================================
+# SOEN COMPREHENSIVE Training Configuration Template
+#
+# This file contains ALL available configuration options for SOEN model training.
+# Most options are commented out to show what's available. Uncomment and modify
+# sections as needed for your specific experiment.
+#
+# This serves as both a template and documentation of all available features.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Experiment Metadata
+# ------------------------------------------------------------------------------
+description: "Comprehensive example showing all available SOEN training configuration options"
+seed: 42  # Random seed for reproducibility across runs
+
+# ==============================================================================
+# Training Configuration
+# ==============================================================================
+training:
+  # --- Task Axes ---
+  paradigm: supervised               # supervised | unsupervised (more for metadata than anything else)
+  mapping: seq2static                # seq2static | seq2seq | static2seq | static2static
+
+  # --- Basic Training Settings ---
+  batch_size: 64                    # Number of samples per batch
+  max_epochs: 100                   # Maximum number of training epochs
+  num_repeats: 1                    # How many times to repeat the entire experiment
+  
+  # --- Autoregressive (AR) Mode for Sequence-to-Sequence Tasks ---
+  autoregressive: false             # Enable autoregressive training mode
+  autoregressive_mode: "next_token" # "next_token" (LM style) or "seq2seq"
+  time_steps_per_token: 1           # Number of simulation timesteps per token
+  autoregressive_start_timestep: 0  # Timestep to start computing AR loss from
+  
+  # --- Compute & Hardware Settings ---
+  accelerator: "auto"               # "auto", "cpu", "gpu", "mps", "tpu"
+  precision: "32-true"              # "32-true" (standard), "16-mixed" (faster GPU training)
+  devices: "auto"                   # "auto", 1 (single GPU), [0, 1] (specific GPUs)
+  num_workers: 4                    # CPU workers for data loading (0 for debugging)
+  deterministic: false              # Reproducibility (may impact performance)
+  
+  # --- Gradient & Optimization ---
+  accumulate_grad_batches: 1        # Simulate larger batch size on limited memory
+  gradient_clip_val: 1.0            # Gradient clipping value (null to disable)
+  gradient_clip_algorithm: "norm"   # "norm" or "value"
+
+  # --- Truncated Backprop Through Time (TBPTT) ---
+  # Enable and set the chunk length in timesteps. Works with batch_first inputs [B, T, ...].
+  # use_tbptt: true
+  # tbptt_steps: 32
+  # tbptt_stride: 16                 # Optional stride between chunk starts (overlap if < steps)
+  
+  # --- Checkpointing ---
+  checkpoint_every_n_epochs: 1      # Checkpoint frequency
+  checkpoint_save_top_k: 3          # Keep top K best models (ignored if checkpoint_save_all_epochs is true)
+  checkpoint_save_last: true        # Always save last epoch
+  checkpoint_save_all_epochs: false # If true, save a checkpoint every epoch and keep all
+  save_initial_state: true          # Save model before training starts
+  save_soen_core_in_checkpoint: true # Write matching .soen sidecars next to retained .ckpt
+  
+  # --- Early Stopping ---
+  early_stopping_patience: null     # Stop if no improvement for N epochs
+  
+  # --- Optimizer Configuration ---
+  optimizer:
+    name: "adamw"                   # Options: "adamw", "adam", "lion", "sgd", "rmsprop", "muon"
+    lr: 0.001                       # Base learning rate (controlled by scheduler)
+    kwargs:
+      weight_decay: 1e-4            # L2 regularization (scientific notation now supported)
+      # betas: [0.9, 0.999]        # Adam/AdamW momentum parameters
+      # eps: 1e-8                   # Numerical stability
+      # amsgrad: false              # Use AMSGrad variant
+      # momentum: 0.9               # SGD momentum
+      # dampening: 0                # SGD dampening
+      # nesterov: false             # SGD Nesterov momentum
+      # --- Muon-only optional kwargs ---
+      # muon_lr: 0.02              # LR for Muon param group (defaults to lr)
+      # aux_lr: 3.0e-4             # LR for AdamW aux group (defaults to lr)
+      # momentum: 0.95             # Muon momentum (kept here for simplicity)
+      # betas: [0.9, 0.95]         # Aux AdamW betas
+
+  # --- Loss Functions ---
+  # You can combine multiple loss functions with different weights
+  loss:
+    losses:
+      # Standard classification loss
+      - name: cross_entropy
+        weight: 1.0
+        params: {}
+      
+      # Gap loss for margin-based learning
+      # - name: gap_loss
+      #   weight: 0.5
+      #   params:
+      #     margin: 0.2              # Margin for gap loss
+      
+      # Rich margin loss with multiple components (an experiment)
+      # - name: rich_margin_loss
+      #   weight: 1.0
+      #   params:
+      #     margin: 0.5              # Base margin
+      #     sigma_noise: 0.05        # Noise level for consistency
+      #     λ_gap: 1.0               # Gap loss weight
+      #     λ_noise: 0.3             # Noise consistency weight
+      #     λ_entropy: 0.1           # Entropy regularization weight
+      #     λ_consistency: 0.2       # Batch consistency weight
+      #     λ_diversity: 0.1         # Class diversity weight
+      
+      # Regularization losses
+      # - name: reg_J_loss
+      #   weight: 0.01
+      #   params:
+      #     threshold: 0.24          # Weight threshold for penalty
+      #     scale: 1.0               # Penalty steepness
+      #     factor: 0.01             # Overall scaling
+      
+      # - name: exp_high_state_penalty
+      #   weight: 0.01
+      #   params:
+      #     threshold: 2.0           # State threshold
+      #     penalty_factor: 0.1      # Penalty strength
+      
+      # - name: get_off_the_ground_loss
+      #   weight: 0.1
+      #   params:
+      #     target_activation: 0.1   # Minimum desired activation
+      
+      # - name: top_gap_loss
+      #   weight: 0.5
+      #   params:
+      #     margin: 0.3              # Top-class margin
+      
+      # Autoregressive losses (for sequence modeling)
+      # - name: autoregressive_loss
+      #   weight: 1.0
+      #   params: {}
+      
+      # - name: autoregressive_cross_entropy
+      #   weight: 1.0
+      #   params: {}
+      
+      # Regression loss
+      # - name: mse
+      #   weight: 1.0
+      #   params: {}
+  
+  # --- Resume Training ---
+  # train_from_checkpoint: "path/to/checkpoint.ckpt"
+
+# ==============================================================================
+# Data Configuration
+# ==============================================================================
+data:
+  # --- Basic Data Settings ---
+  data_path: "path/to/your/dataset.h5"  # REQUIRED: Path to your dataset
+  cache_data: true                       # Cache dataset in RAM for speed
+  # num_classes is now inferred automatically from the dataset labels; you may override if needed
+  # num_classes: 10                        # Number of output classes (optional override)
+  val_split: 0.2                         # Validation set fraction
+  test_split: 0.1                        # Test set fraction
+  
+  # --- Sequence Processing ---
+  sequence_length: 100                   # Base sequence length
+  target_seq_len: null                   # Resample to this length (null = no resampling)
+  min_scale: -1.0                        # Minimum normalization value
+  max_scale: 1.0                         # Maximum normalization value
+  
+  # --- Input Encoding ---
+  input_encoding: "raw"                  # "raw", "one_hot", "embedding"
+  vocab_size: null                       # Required for "one_hot" encoding
+  one_hot_dtype: "float32"               # Data type for one-hot vectors
+  
+
+# ==============================================================================
+# Model Configuration
+# ==============================================================================
+model:
+  # --- Model Loading ---
+  base_model_path: "path/to/your/base_model.pth"  # Path to pre-trained SOEN model
+  load_exact_model_state: false         # Load exact state vs just architecture
+  
+  # --- Time Pooling Methods ---
+  # How to aggregate temporal information from SOEN simulation
+  time_pooling:
+    name: "final"                          # Pooling method
+    params:
+      scale: 1.0                         # Output scaling factor
+  
+  # Available time pooling methods:
+  # - "max": Maximum over time
+  # - "mean": Average over time  
+  # - "rms": Root mean square over time
+  # - "final": Use final timestep only
+  # - "mean_last_n": Average of last N timesteps
+  #   time_pooling:
+  #     name: "mean_last_n"
+  #     params: {n: 10, scale: 1.0}
+  # - "mean_range": Average over specific range
+  #   time_pooling:
+  #     name: "mean_range"
+  #     params: {scale: 1.0}
+  #   range_start: 50                    # Start index for range
+  #   range_end: 100                     # End index for range
+  # - "ewa": Exponentially weighted average
+  #   time_pooling:
+  #     name: "ewa"
+  #     params: {scale: 1.0}
+  
+  # --- SOEN Simulation Settings ---
+  dt: 195.3125                           # Simulation timestep (1 dt = 1.28ps)
+  dt_learnable: false                    # Make dt a learnable parameter
+
+# ==============================================================================
+# Logging Configuration
+# ==============================================================================
+logging:
+  # --- Output Directories ---
+  project_dir: "experiments/"               # Base directory for the entire project (contains checkpoints/ and logs/)
+  
+  # --- Experiment Organization ---
+  project_name: "SOEN_Experiments"       # Top-level project name
+  group_name: "My_Experiment_Group"      # Group related experiments
+  experiment_name: null                  # Specific experiment name (auto-generated if null)
+  
+  # --- Metrics to Track ---
+  metrics:
+    - "accuracy"                         # Classification accuracy
+    - "perplexity"                       # Language modeling perplexity
+    - "bits_per_character"               # Information theory metric
+    # - "top_3_accuracy"                 # Top-3 classification accuracy
+    # - "f1_score"                       # F1 score for classification
+    # - "precision"                      # Precision metric
+    # - "recall"                         # Recall metric
+  
+  # --- Logging Frequency & Detail ---
+  log_freq: 50                           # Log metrics every N batches (applies to all logging)
+  log_batch_metrics: true                # Log metrics at batch level
+  log_level: "INFO"                      # Logging verbosity
+  log_gradients: false                   # Log gradient histograms
+  track_layer_params: false              # Track layer-specific parameters (excluding connections)
+  track_connections: false               # Track connection weight histograms (TensorBoard native)
+  
+  # --- Cloud Storage ---
+  upload_logs_and_checkpoints: false     # Upload to cloud storage
+  s3_upload_url: null                    # S3 bucket URL for uploads
+
+  # --- MLflow (Optional) ---
+  mlflow_active: false
+  mlflow_tracking_uri: "file:./mlruns" # or comment out if you want to user s3+mlflow server
+  mlflow_password: "xxx" # ask team for password if you want to use the EC2 MLFlow server (website is at https://mlflow-greatsky.duckdns.org)
+  # Experiment derives from project_name; run name derives from repeat dir
+  mlflow_log_artifacts: true
+  mlflow_tags:
+    owner: you
+  
+
+# ==============================================================================
+# Callbacks Configuration
+# ==============================================================================
+callbacks:
+  # --- Learning Rate Schedulers ---
+  lr_scheduler:
+    # Option 1: Constant Learning Rate
+    type: "constant"
+    lr: 0.001
+    
+    # Option 2: Cosine Annealing with Warmup (Recommended)
+    # type: "cosine"
+    # max_lr: 0.001                      # Peak learning rate
+    # min_lr: 1e-6                       # Minimum learning rate
+    # warmup_epochs: 5                   # Linear warmup epochs
+    # cycle_epochs: 50                   # Cosine cycle length
+    # enable_restarts: true              # Enable cosine restarts
+    # restart_decay: 1.0                 # Decay max_lr after restarts
+    # period_decay: 1.0                  # Modify cycle length after restarts
+    # amplitude_decay: 1.0               # Decay oscillation amplitude
+    # adjust_on_batch: true              # Adjust per batch vs per epoch
+    # batches_per_adjustment: 1          # Batches between adjustments
+    # soft_restart: false                # Smooth vs hard restarts
+    # debug: false                       # Enable debug logging
+    
+    # Option 3: Linear Decay
+    # type: "linear"
+    # max_lr: 0.001                      # Starting learning rate
+    # min_lr: 1e-6                       # Final learning rate
+    # log_space: false                   # Linear vs log-space decay
+    # debug: false                       # Enable debug logging
+    
+    # Option 4: REX Scheduler (Research)
+    # type: "rex"
+    # max_lr: 0.001                      # Maximum learning rate
+    # min_lr: 1e-6                       # Minimum learning rate
+    # total_steps: null                  # Total training steps (auto-calculated)
+    # debug: false                       # Enable debug logging
+    
+    # Option 5: Greedy Adaptive Scheduler
+    # type: "greedy"
+    # factor_increase: 1.1               # LR increase factor on improvement
+    # factor_decrease: 0.9               # LR decrease factor on worsening
+    # patience: 3                        # Epochs to wait before adjustment
+    # min_lr: 1e-6                       # Minimum learning rate
+    # max_lr: 0.01                       # Maximum learning rate
+    # warmup:                            # Optional warmup phase
+    #   enabled: true
+    #   epochs: 3
+    #   start_lr: 1e-6
+    # intra_epoch: false                 # Adjust within epochs
+    # adjustment_frequency: 100          # Batches between intra-epoch adjustments
+    # ema_beta: 0.9                      # EMA smoothing for training loss
+    # debug: false                       # Enable debug logging
+    
+    # Option 6: Adaptive Scheduler (Advanced)
+    # type: "adaptive"
+    # monitor_metric: "val_loss"         # Metric to monitor
+    # max_lr: 1e-3                       # Maximum learning rate
+    # min_lr: 1e-6                       # Minimum learning rate
+    # warmup_epochs: 3                   # Warmup epochs
+    # warmup_start_lr: 1e-7              # Warmup starting LR
+    # increase_factor: 1.2               # LR increase factor
+    # decrease_factor: 0.7               # LR decrease factor
+    # patience_increase: 3               # Patience for LR increase
+    # patience_decrease: 5               # Patience for LR decrease
+    # threshold: 1e-4                    # Minimum improvement threshold
+    # threshold_mode: "rel"              # "rel" or "abs" threshold mode
+    # cooldown: 0                        # Epochs to wait after LR change
+    # debug: false                       # Enable debug logging
+  
+  # --- Early Stopping ---
+  # early_stopping:
+  #   monitor: "val_loss"                # Metric to monitor
+  #   patience: 10                       # Epochs without improvement
+  #   mode: "min"                        # "min" for loss, "max" for accuracy
+  #   min_delta: 0.0                     # Minimum change to qualify as improvement
+  #   verbose: true                      # Log early stopping events
+  
+  # --- Sequence Length Scheduler (Advanced) ---
+  # seq_len_scheduler:
+  #   active: true                       # Enable sequence length scheduling
+  #   start_len: 20                      # Starting sequence length
+  #   end_len: 100                       # Final sequence length
+  #   start_epoch: 0                     # When to start increasing length (default: 0)
+  #   end_epoch: null                    # When to finish ramping (null = max_epochs)
+  #   
+  #   # --- JAX Backend: dt Scaling Support ---
+  #   # When using the JAX backend with sequence length scheduling, you can optionally
+  #   # scale dt to keep total simulation time constant: T = dt * seq_len
+  #   # This pre-compiles separate jitted functions for each unique (seq_len, dt) pair
+  #   # to avoid breaking JIT compilation while allowing dynamic dt adjustment.
+  #   scale_dt: false                    # Enable dt scaling with sequence length
+  #   # 
+  #   # How dt scaling works:
+  #   # - dt_new = dt_base * (seq_len_start / seq_len_current)
+  #   # - Shorter sequences get larger dt (fewer but bigger steps)
+  #   # - Longer sequences get smaller dt (more but finer steps)
+  #   # - Total simulation time T = dt * seq_len remains constant
+  #   #
+  #   # The JAX backend will:
+  #   # 1. Extract base_dt from your model automatically
+  #   # 2. Pre-compute all (seq_len, dt) configurations for all epochs
+  #   # 3. Pre-compile jitted functions for each unique configuration
+  #   # 4. Switch between cached functions at epoch boundaries
+  #   #
+  #   # Note: This only works with JAX backend (model.backend: "jax")
+  #   # PyTorch backend supports dt scaling natively without pre-compilation
+  
+
+  # --- Custom Metrics Tracking ---
+  # metrics_tracker:
+  #   debug: false                       # Enable debug mode
+  #   custom_metrics: []                 # Additional metrics to compute
+
+  # --- Loss Weight Schedulers ---
+  # Dynamic scheduling of loss component weights during training
+  # loss_weight_schedulers:
+  #   # Example 1: Sinusoidal schedule for gravity quantization loss
+  #   # Useful for cyclical annealing of quantization pressure
+  #   - loss_name: "gravity_quantization_loss"
+  #     scheduler_type: "sinusoidal"
+  #     params:
+  #       min_weight: 1.0                # Minimum weight in the cycle
+  #       max_weight: 200.0              # Maximum weight in the cycle
+  #       period_steps: 200              # Steps for one complete cycle
+  #       scale: "log"                   # "linear" or "log" space oscillation
+  #
+  #   # Example 2: Linear ramp-up for gap loss
+  #   # Gradually increase margin enforcement over training
+  #   - loss_name: "gap_loss"
+  #     scheduler_type: "linear"
+  #     params:
+  #       min_weight: 0.1                # Starting weight
+  #       max_weight: 1.0                # Final weight at end of training
+  #
+  #   # Example 3: Exponential decay for regularization
+  #   # Strong regularization early, then fade out
+  #   - loss_name: "reg_J_loss"
+  #     scheduler_type: "exponential_decay"
+  #     params:
+  #       initial_weight: 1.0            # Starting weight
+  #       final_weight: 0.01             # Asymptotic final weight
+  #       decay_rate: 3.0                # Controls decay speed (higher = faster)
+  #
+  #   # Example 4: Linear sinusoidal for cross-entropy
+  #   # Oscillate main loss weight in linear space
+  #   - loss_name: "cross_entropy"
+  #     scheduler_type: "sinusoidal"
+  #     params:
+  #       min_weight: 0.5                # Minimum weight
+  #       max_weight: 1.5                # Maximum weight
+  #       period_steps: 1000             # Longer cycle for main loss
+  #       scale: "linear"                # Linear space oscillation
+
+# ==============================================================================
+# Profiler Configuration
+# ==============================================================================
+# Profiling is backend-aware.
+# - PyTorch backend: uses PyTorch Lightning's profiler ('simple' or 'pytorch').
+# - JAX backend: uses a custom profiler for high-level timings and integrates
+#   jax.profiler for detailed tracing.
+profiler:
+  active: false                      # Master switch to enable/disable all profiling
+  
+  # --- General Settings (used by both PyTorch and JAX backends) ---
+  # Optionally limits the number of batches to run for a quick performance analysis.
+  # Set to null/None to profile all batches. By default, all epochs will run.
+  num_train_batches: null            # Number of training batches to run (null = all batches)
+  num_val_batches: null              # Number of validation batches to run (null = all batches)
+  
+  # --- PyTorch Profiler Settings (when type is 'pytorch') ---
+  type: "simple"                     # "simple", "pytorch"
+  output_filename: "profile_report"  # Base name for the output file (e.g., profile_report.txt)
+  record_shapes: false               # Record tensor shapes
+  profile_memory: false              # Profile memory usage
+  with_stack: false                  # Record operator stack traces
+  
+  # --- JAX Profiler Settings ---
+  # Controls the "surgical tracing" window to keep memory usage low.
+  # The trace will start after `trace_start_batch` batches of the first epoch,
+  # and run for `trace_duration_batches` batches.
+  trace_start_batch: 5               # Batch to start detailed JAX trace
+  trace_duration_batches: 5          # Number of batches to trace

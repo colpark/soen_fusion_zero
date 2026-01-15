@@ -1,0 +1,7 @@
+recursive-include src/soen_toolkit/training/examples *.pth *.yaml
+recursive-include src/soen_toolkit **/README.md **/README.txt **/*.md
+recursive-include src/soen_toolkit/core/source_functions *.soen
+
+
+include src/soen_toolkit/tutorial_notebooks/training/datasets/soen_seq_task_one_or_two_pulses_seq64.hdf5
+include src/soen_toolkit/tutorial_notebooks/training/test_models/full_models/1D_5D_2D_PulseNet.soen

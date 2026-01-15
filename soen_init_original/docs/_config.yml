@@ -1,0 +1,58 @@
+# GitHub Pages Jekyll Configuration for SOEN-Toolkit Documentation
+
+title: SOEN-Toolkit Documentation
+description: Documentation for SOEN-Toolkit - Simulation Package for Superconducting Optoelectronic Networks
+author: Great Sky Team
+email: cox@greatsky.ai
+
+# GitHub Pages settings
+baseurl: "/soen-toolkit"
+url: "https://greatsky-ai.github.io"
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+# theme: minima  # Removed theme to use custom layout
+
+# Kramdown configuration
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    default_lang: python
+    css_class: 'highlight'
+    span:
+      line_numbers: false
+    block:
+      line_numbers: false
+      start_line: 1
+  math_engine: mathjax
+  math_engine_opts:
+    preview: true
+    preview_as_code: false
+  auto_ids: true
+  hard_wrap: false
+  parse_block_html: true
+
+# Plugins
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+  - jekyll-seo-tag
+  - jekyll-relative-links
+
+# Plugin configuration
+relative_links:
+  enabled: true
+  collections: false
+
+# Exclude files from processing
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor/bundle/
+  - vendor/cache/
+  - vendor/gems/
+  - vendor/ruby/

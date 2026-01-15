@@ -1,0 +1,106 @@
+# ------------------------------------------------------------------------------
+# Experiment Metadata
+# ------------------------------------------------------------------------------
+description: "Example training configuration for a pulse classification tiny 5Dnetwork"
+seed: 1
+
+# ==============================================================================
+# Training Configuration
+# ==============================================================================
+training:
+  # --- Basic Settings ---
+  batch_size: 64                # Number of samples per batch.
+  max_epochs: 10              # Maximum number of training epochs.
+
+  # --- Compute & Hardware Settings (for PyTorch Lightning Trainer) ---
+  accelerator: "cpu"             # "auto", "cpu", "gpu", "mps", "tpu"...
+  precision: "32-true"            # "32-true" (standard), "16-mixed" (for faster GPU training).
+  devices: "auto"                 # "auto", 1 (for 1 GPU), [0, 1] (for specific GPUs).
+  num_workers: 0                  # Number of CPU workers for data loading. Set to 0 for debugging.
+  deterministic: false             # For reproducibility. May impact performance slightly.
+
+  # num_repeats: 100 # if you have this turned on then it will train the model N times, with different seeds and fresh random re-builds of the base model
+
+  # --- Optimizer ---
+  optimizer:
+    name: "adam"                 # Options: "adamw", "adam", "lion", "sgd", "rmsprop", or muon, but that one has not worked well so far
+    lr: 0.0001                     # Base learning rate. Will be controlled by the scheduler.
+
+  # --- Loss Functions ---
+  # Define one or more weighted loss components.
+  losses:
+    # Example 1: Standard Cross-Entropy for classification
+    - name: cross_entropy
+      weight: 1.0
+      params: {}
+
+# ==============================================================================
+# Data Configuration
+# ==============================================================================
+data:
+  data_path: "training/datasets/soen_seq_task_one_or_two_pulses_seq64.hdf5" # will get updated by the patch_config_paths_for_local_run function
+  cache_data: true # for small datasets, this makes things much much faster. We need to come up with more efficient methods of streaming larger datasets from memory.
+  target_seq_len: 64 # this would resample the original dataset.
+
+# ==============================================================================
+# Model Configuration
+# ==============================================================================
+model:
+  base_model_path: "training/test_models/model_specs/1D_5D_2D_PulseNetSpec.yaml" # will get updated by the patch_config_paths_for_local_run function
+  # if we want to load the exact model state from the base model path rather than a fresh random re-build.
+  # if you do repeats with this = true, then the model will not be random each time. The dataset should still be randomly shuffled though.
+  load_exact_model_state: false # In this case, the 1D_5D_2D model is already trained, so if you set this to true you won't see much training...
+
+  # How do we turn the output layer's time series states into a single value per node?
+  # in this case we are taking the max over time and then scaling by 1.0X (so not scaling it)
+  time_pooling: 
+    name: "max"
+    params: {scale: 1.0}
+
+  dt: 779 # remember a dt of 1 roughly corresponds to 1.28ps.
+
+# ==============================================================================
+# Logging Configuration
+# ==============================================================================
+logging:
+  # update this path
+  project_dir: "src/soen_toolkit/tutorial_notebooks/training/temp"
+  project_name: "ExampleTraining"
+  experiment_name: "PulseNet"
+  group_name: "BaseModel"
+  
+  # maybe all of these should be moved to the callbacks section?
+  metrics:
+    - "accuracy"
+    - "perplexity"
+    - "bits_per_character"
+   
+  log_freq: 50
+  log_batch_metrics: true
+  log_level: "WARNING"
+  log_gradients: false
+
+  track_layer_params: true
+  track_connections: true
+
+# ==============================================================================
+# Callbacks Configuration
+# ==============================================================================
+callbacks:
+  # --- Learning Rate Scheduler ---
+  # The LR scheduler is now a callback. Choose one of the following options.
+  lr_scheduler:
+    # Option 1: Constant Learning Rate
+    # type: "constant"
+    # lr: 1e-5
+
+
+    type: "cosine"
+    max_lr: 1e-3
+    min_lr: 5e-6
+    warmup_epochs: 0
+    cycle_epochs: 50
+    period_decay: 1.2
+    amplitude_decay: 0.9
+    # disable cycles..
+

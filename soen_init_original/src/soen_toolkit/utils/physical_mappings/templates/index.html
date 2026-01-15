@@ -1,0 +1,300 @@
+<!-- FILEPATH: src/soen/utils/physical_mappings/templates/index.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOEN Phenomenological Model Converter</title>
+    
+    <!-- MathJax Configuration -->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                packages: ['base', 'ams', 'noerrors', 'noundefined']
+            }
+        };
+    </script>
+
+    <!-- Custom styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v={{ static_version }}">
+    <style>
+        .navbar {
+            background-color: #1565c0;
+            color: white;
+            padding: 10px 0;
+            margin-bottom: 20px;
+        }
+        .navbar-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+        }
+        .navbar-brand {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: white;
+            text-decoration: none;
+        }
+        .navbar-links {
+            display: flex;
+            gap: 20px;
+        }
+        .navbar-links a {
+            color: white;
+            text-decoration: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .navbar-links a:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            text-decoration: none;
+        }
+        .navbar-links a.active {
+            background-color: rgba(255, 255, 255, 0.2);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="navbar-container">
+            <a href="/" class="navbar-brand">SOEN Tools</a>
+            <div class="navbar-links">
+                <a href="/" class="active">Parameter Converter</a>
+            </div>
+        </div>
+    </nav>
+    <div class="container">
+        <h1>SOEN Phenomenological Model Converter</h1>
+        
+        <!-- Fundamental Constants Section -->
+        <section class="fundamental-constants">
+            <h2>Fundamental Constants</h2>
+            <p style="font-size: 0.95rem; color: #555; margin-bottom: 1em;">
+                All fundamental constants are defined in <code>soen_toolkit.physics.constants</code>.
+            </p>
+            <div class="constants-grid" id="constants-container">
+                <!-- Constants will be populated via JavaScript -->
+            </div>
+        </section>
+        
+        <!-- Base Parameters Section -->
+        <section class="base-parameters">
+            <h2>Base Parameters</h2>
+            <div class="parameter-grid">
+                <!-- Input Parameters -->
+                <div class="input-parameters">
+                    <h3>Input Parameters</h3>
+                    <div class="input-group">
+                        <label for="I_c">Critical Current $(I_c)$ [A]</label>
+                        <input id="I_c" type="number" step="any" value="100e-6">
+                    </div>
+                    <div class="input-group">
+                        <label for="gamma_c">Capacitance Proportionality $(\gamma_c)$ [F/A]</label>
+                        <input id="gamma_c" type="number" step="any" value="1.5e-9">
+                    </div>
+                    <div class="input-group">
+                        <label for="beta_c">Stewart-McCumber Parameter $(\beta_c)$</label>
+                        <input id="beta_c" type="number" step="any" value="0.3">
+                    </div>
+                    <button onclick="updateBaseParameters()" class="primary-button">Update Base Parameters</button>
+                </div>
+
+                <!-- Derived Physical Parameters -->
+                <div class="derived-parameters">
+                    <h3>Derived Parameters</h3>
+                    <div class="parameter-group">
+                        <div class="parameter-item">
+                            <span>Junction Capacitance:</span>
+                            <span id="c_j"></span>
+                            <span>[F]</span>
+                            <span class="equation">$c_j = \gamma_c I_c$</span>
+                        </div>
+                        <div class="parameter-item">
+                            <span>Junction Resistance:</span>
+                            <span id="r_jj"></span>
+                            <span>[Ω]</span>
+                            <span class="equation">$r_{jj} = \sqrt{\frac{\beta_c \Phi_0}{2\pi c_j I_c}}$</span>
+                        </div>
+                        <div class="parameter-item">
+                            <span>Junction Voltage:</span>
+                            <span id="V_j"></span>
+                            <span>[V]</span>
+                            <span class="equation">$V_j = I_c r_{jj}$</span>
+                        </div>
+                        <div class="parameter-item">
+                            <span>Characteristic Time:</span>
+                            <span id="tau_0"></span>
+                            <span>[s]</span>
+                            <span class="equation">$\tau_0 = \frac{\Phi_0}{2\pi I_c r_{jj}}$</span>
+                        </div>
+                        <div class="parameter-item">
+                            <span>Josephson Frequency:</span>
+                            <span id="omega_c"></span>
+                            <span>[rad/s]</span>
+                            <span class="equation">$\omega_c = \frac{2\pi I_c r_{jj}}{\Phi_0}$</span>
+                        </div>
+                        <div class="parameter-item">
+                            <span>Plasma Frequency:</span>
+                            <span id="omega_p"></span>
+                            <span>[rad/s]</span>
+                            <span class="equation">$\omega_p = \sqrt{\frac{2\pi}{\Phi_0 \gamma_c}}$</span>
+                        </div>
+                        <div class="parameter-item">
+                            <span>Dimensionless Time Constant:</span>
+                            <span id="tau"></span>
+                            <span class="equation">$\tau = \frac{\beta_L}{\alpha}$</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Conversion Section -->
+        <section class="conversions">
+            <h2>Physical ↔ Dimensionless Conversions</h2>
+            <div class="conversion-grid">
+                <!-- Physical to Dimensionless -->
+                <div class="conversion-column">
+                    <h3>Physical to Dimensionless</h3>
+                    <div class="conversion-group">
+                        <div class="input-group">
+                            <label for="I">Current $(I)$ [A]</label>
+                            <input id="I" type="number" step="any">
+                            <span class="equation">$i = I/I_c$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="Phi">Flux $(\Phi)$ [Wb]</label>
+                            <input id="Phi" type="number" step="any">
+                            <span class="equation">$\phi = \Phi/\Phi_0$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="L">Inductance $(L)$ [H]</label>
+                            <input id="L" type="number" step="any">
+                            <span class="equation">$\beta_L = 2\pi I_c L/\Phi_0$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="t">Time $(t)$ [s]</label>
+                            <input id="t" type="number" step="any">
+                            <span class="equation">$t' = t\omega_c$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="r_leak">Leak Resistance $(r_{\text{leak}})$ [Ω]</label>
+                            <input id="r_leak" type="number" step="any">
+                            <span class="equation">$\alpha = r_{\text{leak}}/r_{jj}$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="G_fq">Flux Quantum Rate $(G_{fq})$ [Hz]</label>
+                            <input id="G_fq" type="number" step="any">
+                            <span class="equation">$g_{fq} = 2\pi G_{fq}/\omega_c$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="tau_physical">Physical Tau $(\tau_{\text{phys}})$ [s]</label>
+                            <input id="tau_physical" type="number" step="any">
+                            <span class="equation">$\gamma_- = 1 / (\tau_{\text{phys}} \cdot \omega_c)$</span>
+                        </div>
+                        <button onclick="convertToDimensionless()" class="primary-button">Convert to Dimensionless</button>
+                        <div id="dimensionlessResult" class="result"></div>
+                    </div>
+                </div>
+
+                <!-- Dimensionless to Physical -->
+                <div class="conversion-column">
+                    <h3>Dimensionless to Physical</h3>
+                    <div class="conversion-group">
+                        <div class="input-group">
+                            <label for="i">Current $(i)$</label>
+                            <input id="i" type="number" step="any">
+                            <span class="equation">$I = iI_c$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="phi">Flux $(\phi)$</label>
+                            <input id="phi" type="number" step="any">
+                            <span class="equation">$\Phi = \phi\Phi_0$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="beta_L">Inductance $(\beta_L)$</label>
+                            <input id="beta_L" type="number" step="any">
+                            <span class="equation">$L = \beta_L\Phi_0/(2\pi I_c)$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="gamma_plus">Inductance $(\gamma_+ = 1/\beta_L)$</label>
+                            <input id="gamma_plus" type="number" step="any">
+                            <span class="equation">$L = \Phi_0/(2\pi\gamma_+ I_c)$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="t_prime">Time $(t')$</label>
+                            <input id="t_prime" type="number" step="any">
+                            <span class="equation">$t = t'/\omega_c$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="alpha">Resistance $(\alpha)$</label>
+                            <input id="alpha" type="number" step="any">
+                            <span class="equation">$r_{\text{leak}} = \alpha r_{jj}$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="gamma_minus">Time Constant $(\gamma_- = \alpha/\beta_L = 1/\tau)$</label>
+                            <input id="gamma_minus" type="number" step="any">
+                            <span class="equation">$\tau = 1/\gamma_-$</span>
+                        </div>
+                        <div class="input-group">
+                            <label for="g_fq">Flux Quantum Rate $(g_{fq})$</label>
+                            <input id="g_fq" type="number" step="any">
+                            <span class="equation">$G_{fq} = g_{fq}\omega_c/(2\pi)$</span>
+                        </div>
+                        <button onclick="convertToPhysical()" class="primary-button">Convert to Physical</button>
+                        <div id="physicalResult" class="result"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        
+        <!-- Footer Section -->
+        <footer class="page-footer">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>About SOEN Simulator</h3>
+                    <p>This tool converts between physical and dimensionless quantities used in the SOEN Phenomenological Model.</p>
+                    <p>Use it to calculate parameters for your simulations and to understand the relationships between physical and model quantities.</p>
+                </div>
+                <div class="footer-section">
+                    <h3>Tips</h3>
+                    <ul>
+                        <li>Set base parameters first, then perform conversions</li>
+                        <li>All conversions use currently set base parameters</li>
+                        <li>Default values are for "typical" superconducting dendrites</li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h3>Quick Reference</h3>
+                    <ul>
+                        <li>Φ₀ = Magnetic flux quantum (h/2e)</li>
+                        <li>i = I/Ic (normalized current)</li>
+                        <li>φ = Φ/Φ₀ (normalized flux)</li>
+                        <li>βL = 2πIcL/Φ₀ (normalized inductance)</li>
+                        <li>γ = 1/βL (alternative to βL)</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>© 2025 Great Sky Team</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Custom JavaScript -->
+    <script src="{{ url_for('static', filename='js/script.js') }}?v={{ static_version }}"></script>
+</body>
+</html>

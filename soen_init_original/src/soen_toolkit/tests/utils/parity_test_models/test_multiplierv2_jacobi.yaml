@@ -1,0 +1,530 @@
+simulation:
+  dt: 37.0
+  dt_learnable: false
+  input_type: state
+  track_power: false
+  track_phi: false
+  track_g: false
+  track_s: false
+  network_evaluation_method: stepwise_jacobi
+  early_stopping_forward_pass: false
+  early_stopping_tolerance: 1.0e-06
+  early_stopping_patience: 1
+  early_stopping_min_steps: 1
+  steady_window_min: 50
+  steady_tol_abs: 1.0e-05
+  steady_tol_rel: 0.001
+
+layers:
+- layer_id: 0
+  layer_type: Linear
+  params:
+    dim: 8
+  model_id: 0
+  description: 'Input layer'
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+
+- layer_id: 1
+  layer_type: MultiplierNOCC
+  params:
+    learnable_params:
+      phi_y: false
+      bias_current: false
+      alpha: false
+      beta: false
+      beta_out: false
+    phi_y:
+      distribution: constant
+      params:
+        value: 0.1
+    bias_current:
+      distribution: constant
+      params:
+        value: 2.1
+    alpha:
+      distribution: constant
+      params:
+        value: 1.64053
+    beta:
+      distribution: constant
+      params:
+        value: 303.85
+    beta_out:
+      distribution: constant
+      params:
+        value: 91.156
+    dim: 5
+    solver: FE
+    source_func: RateArray
+  model_id: 0
+  description: 'Test layer with fixed self-connection'
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras:
+      phi_y: 0.0
+      bias_current: 0.0
+      alpha: 0.0
+      beta: 0.0
+      beta_out: 0.0
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean:
+      phi_y: 0.0
+      bias_current: 0.0
+      alpha: 0.0
+      beta: 0.0
+      beta_out: 0.0
+    extras_std:
+      phi_y: 0.0
+      bias_current: 0.0
+      alpha: 0.0
+      beta: 0.0
+      beta_out: 0.0
+
+- layer_id: 2
+  layer_type: MultiplierNOCC
+  params:
+    learnable_params:
+      phi_y: false
+      bias_current: false
+      alpha: false
+      beta: false
+      beta_out: false
+    phi_y:
+      distribution: constant
+      params:
+        value: 0.1
+    bias_current:
+      distribution: constant
+      params:
+        value: 2.1
+    alpha:
+      distribution: constant
+      params:
+        value: 1.64053
+    beta:
+      distribution: constant
+      params:
+        value: 303.85
+    beta_out:
+      distribution: constant
+      params:
+        value: 91.156
+    dim: 5
+    solver: FE
+    source_func: RateArray
+  model_id: 0
+  description: 'Test layer with WICC self-connection'
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras:
+      phi_y: 0.0
+      bias_current: 0.0
+      alpha: 0.0
+      beta: 0.0
+      beta_out: 0.0
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean:
+      phi_y: 0.0
+      bias_current: 0.0
+      alpha: 0.0
+      beta: 0.0
+      beta_out: 0.0
+    extras_std:
+      phi_y: 0.0
+      bias_current: 0.0
+      alpha: 0.0
+      beta: 0.0
+      beta_out: 0.0
+
+- layer_id: 3
+  layer_type: MultiplierNOCC
+  params:
+    learnable_params:
+      phi_y: false
+      bias_current: false
+      alpha: false
+      beta: false
+      beta_out: false
+    phi_y:
+      distribution: constant
+      params:
+        value: 0.1
+    bias_current:
+      distribution: constant
+      params:
+        value: 2.1
+    alpha:
+      distribution: constant
+      params:
+        value: 1.64053
+    beta:
+      distribution: constant
+      params:
+        value: 303.85
+    beta_out:
+      distribution: constant
+      params:
+        value: 91.156
+    dim: 5
+    solver: FE
+    source_func: RateArray
+  model_id: 0
+  description: 'Test layer with NOCC self-connection'
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras:
+      phi_y: 0.0
+      bias_current: 0.0
+      alpha: 0.0
+      beta: 0.0
+      beta_out: 0.0
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean:
+      phi_y: 0.0
+      bias_current: 0.0
+      alpha: 0.0
+      beta: 0.0
+      beta_out: 0.0
+    extras_std:
+      phi_y: 0.0
+      bias_current: 0.0
+      alpha: 0.0
+      beta: 0.0
+      beta_out: 0.0
+
+connections:
+# Layer 0 -> 1 (fixed inter-layer)
+- from_layer: 0
+  to_layer: 1
+  connection_type: dense
+  params:
+    structure:
+      type: dense
+      params: {}
+    init:
+      name: normal
+      params:
+        mean: 0.0
+        std: 0.1
+    allow_self_connections: true
+    mode: fixed
+  learnable: true
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+  visualization_metadata: null
+
+# Layer 1 -> 2 (WICC inter-layer)
+- from_layer: 1
+  to_layer: 2
+  connection_type: dense
+  params:
+    structure:
+      type: dense
+      params: {}
+    init:
+      name: normal
+      params:
+        mean: 0.0
+        std: 0.1
+    allow_self_connections: true
+    mode: WICC
+    connection_params:
+      source_func: RateArray
+      gamma_plus: 0.001
+      gamma_minus: 0.001
+      bias_current: 2.1
+      j_in: 0.38
+      j_out: 0.38
+      half_flux_offset: false
+  learnable: true
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+  visualization_metadata: null
+
+# Layer 2 -> 3 (NOCC inter-layer)
+- from_layer: 2
+  to_layer: 3
+  connection_type: dense
+  params:
+    structure:
+      type: dense
+      params: {}
+    init:
+      name: normal
+      params:
+        mean: 0.0
+        std: 0.1
+    allow_self_connections: true
+    mode: NOCC
+    connection_params:
+      source_func: RateArray
+      alpha: 1.64053
+      beta: 303.85
+      beta_out: 91.156
+      bias_current: 2.1
+      j_in: 0.38
+      j_out: 0.38
+      half_flux_offset: false
+  learnable: true
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+  visualization_metadata: null
+
+# Layer 1 self-connection (fixed)
+- from_layer: 1
+  to_layer: 1
+  connection_type: dense
+  params:
+    structure:
+      type: dense
+      params: {}
+    init:
+      name: normal
+      params:
+        mean: 0.0
+        std: 0.1
+    allow_self_connections: true
+    mode: fixed
+  learnable: true
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+  visualization_metadata: null
+
+# Layer 2 self-connection (WICC)
+- from_layer: 2
+  to_layer: 2
+  connection_type: dense
+  params:
+    structure:
+      type: dense
+      params: {}
+    init:
+      name: normal
+      params:
+        mean: 0.0
+        std: 0.1
+    allow_self_connections: true
+    mode: WICC
+    connection_params:
+      source_func: RateArray
+      gamma_plus: 0.001
+      gamma_minus: 0.001
+      bias_current: 2.1
+      j_in: 0.38
+      j_out: 0.38
+      half_flux_offset: true
+  learnable: true
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+  visualization_metadata: null
+
+# Layer 3 self-connection (NOCC)
+- from_layer: 3
+  to_layer: 3
+  connection_type: dense
+  params:
+    structure:
+      type: dense
+      params: {}
+    init:
+      name: normal
+      params:
+        mean: 0.0
+        std: 0.1
+    allow_self_connections: true
+    mode: NOCC
+    connection_params:
+      source_func: RateArray
+      alpha: 1.64053
+      beta: 303.85
+      beta_out: 91.156
+      bias_current: 2.1
+      j_in: 0.38
+      j_out: 0.38
+      half_flux_offset: true
+  learnable: true
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+  visualization_metadata: null
+
+seed: 1
+

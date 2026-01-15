@@ -1,0 +1,289 @@
+paths:
+  base_model_spec: "/Users/matthewcox/Documents/GreatSky_Local/Q2/soen_v2_studies/Studies/Criticality/ModelSpecs/10D_base.yaml"
+  output_dir: "/Users/matthewcox/Documents/GreatSky_Local/Q2/soen_v2_studies/Studies/Criticality/criticality_runs"
+  train_config: null # Path to training config YAML, required for 'epoch' mode
+
+run:
+  hpo_mode: 'forward'  # 'forward' for simulation-only, 'epoch' for training-based
+  n_trials: 500
+  timeout: null
+  n_jobs: 10
+  # seed: 42
+  study_name: "overnight_4thSept_10D"
+  profile: false
+  resume: false
+
+simulation:
+  seq_len: 200
+  batch_size: 4
+  # Optional override for model dt (in dt units; 1 dt = 1.28 ps)
+  # If omitted or null, the model's own dt is used
+  # dt: 37
+
+input:
+  kind: colored_noise # white_noise | colored_noise | log_slope_noise | gp_rbf
+  params:
+    beta: 0.25         # for colored_noise
+    # For log_slope_noise (band-limited dB/decade slope):
+    # slope_db_per_dec: -20.0
+    # fmin_frac: 0.01
+    # fmax_frac: 0.5
+    # delta_n: 1.0    # for white_noise
+    # sigma: 1.0      # for gp_rbf
+    # ell_ns: 0.1     # for gp_rbf
+
+objective:
+  weights:
+    w_branch: 1.0
+    w_psd_t: 0.1
+    w_psd_spatial: 0.1
+    w_chi_inv: 0.1
+    w_avalanche: 0.1
+    w_autocorr: 0.1
+  targets:
+    target_beta_t: 2.0
+    target_beta_spatial: 2.0
+
+# optuna:
+#   sampler: cma
+#   sampler_kwargs:
+#     sigma0: 0.4
+#     restart_strategy: bipop # or bipop, ipop
+#     warn_independent_sampling: false
+#     independent_sampler:
+#       name: tpe
+#       kwargs:
+#         n_startup_trials: 20
+#         n_ei_candidates: 24
+#         multivariate: false
+#         warn_independent_sampling: false
+
+optuna:
+  sampler: cma
+  sampler_kwargs:
+    population_size: 24
+    sigma0: 0.4                # larger initial step; encourages exploration
+    restart_strategy: bipop     # better than ipop in practice
+    warn_independent_sampling: false
+    independent_sampler:
+      name: tpe
+      kwargs:
+        n_startup_trials: 64
+        n_ei_candidates: 64
+        constant_liar: true     # helps under parallelism
+        multivariate: false
+
+# pruner:
+#   use: false
+#   n_startup_trials: 20
+#   n_warmup_steps: 5
+
+optimization_config:
+  enabled_components:
+    layers: true # layerwise parameters
+    connections: true # structure
+    weights: true # weight init methods and settings
+
+  # Target these layer_ids for layer-wise parameter sampling
+  # Adjust to match your model (remove IDs that don't exist)
+  target_layers: [1]
+
+  # Optional: restrict which connections get updated by Optuna.
+  # Use canonical names like J_FROM_to_TO (e.g., J_0_to_1, J_1_to_1).
+  # If empty or omitted, all learnable connections are eligible.
+  target_connections: ["J_0_to_1", "J_1_to_1"]
+
+  # Layer parameters (applied to each target layer's params block)
+  # Each parameter supports a distribution choice per trial.
+  # Required per_distribution keys:
+  #   constant:  value_bounds or value_choices
+  #   uniform:   min_bounds and max_bounds (or min_choices/max_choices)
+  #   normal:    mean_bounds and std_bounds (or mean_choices for mean)
+  #   loguniform:value_bounds (min > 0)
+  #   lognormal: log_mean_bounds and log_std_bounds
+  layer_parameters:
+    # SingleDendrite params
+    gamma_plus:
+      enabled: true
+      # distributions: [constant, loguniform,uniform,normal]
+      distributions: [uniform]
+      per_distribution:
+        # constant:
+        #   value_bounds: {min: 1.0e-8, max: 3.3e-3}
+        # loguniform:
+        #   value_bounds: {min: 1.0e-8, max: 3.3e-3}
+        uniform:
+          min_bounds: {min: 1.0e-8, max: 3.3e-3}
+          max_bounds: {min: 1.0e-8, max: 3.3e-3}
+        # normal:
+        #   mean_bounds: {min: 1.0e-8, max: 3.3e-3}
+        #   std_bounds: {min: 1.0e-8, max: 3.3e-3}
+
+
+    gamma_minus:
+      enabled: true
+      # distributions: [constant, loguniform,uniform,normal]
+      distributions: [constant]
+      per_distribution:
+        constant:
+          value_bounds: {min: 1.0e-8, max: 1.0e-3}
+        # loguniform:
+        #   value_bounds: {min: 1.0e-8, max: 1.0e-3}
+        # uniform:
+        #   min_bounds: {min: 1.0e-8, max: 1.0e-3}
+        #   max_bounds: {min: 1.0e-8, max: 1.0e-3}
+        # normal:
+        #   mean_bounds: {min: 1.0e-8, max: 1.0e-3}
+        #   std_bounds: {min: 1.0e-8, max: 1.0e-3}
+
+    bias_current:
+      enabled: true
+      distributions: [constant]
+      per_distribution:
+        constant:
+          value_bounds: {min: 1.1, max: 2.2}
+        # uniform:
+        #   min_bounds: {min: 1.0, max: 2.4}
+        #   max_bounds: {min: 1.1, max: 2.5}
+        # normal:
+        #   mean_bounds: {min: 1.0, max: 2.5}
+        #   std_bounds:  {min: 0.01, max: 0.5}
+
+    phi_offset:
+      enabled: true
+      distributions: [constant]
+      per_distribution:
+        constant:
+          value_bounds: {min: -0.5, max: 0.5}
+        # uniform:
+        #   min_bounds: {min: -0.5, max: 0.5}
+        #   max_bounds: {min: -0.5, max: 0.5}
+        # normal:
+        #   mean_bounds: {min: -0.5, max: 0.5}
+        #   std_bounds:  {min: 0.001, max: 0.3}
+
+    
+
+  # Connection-level parameters (applied to each connection's params block)
+  connection_parameters:
+    # Structural choice per connection
+    connection_type:
+      enabled: true
+      # choices: [all_to_all, one_to_one, sparse, block_structure, power_law]
+      choices: [power_law]
+
+    # Power-law topology control
+    alpha:
+      enabled: true
+      type: float
+      bounds: {min: 0.1, max: 10.0}
+      applies_to: [power_law]
+    expected_fan_out:
+      enabled: true
+      type: int
+      bounds: {min: 1, max: 100}
+      applies_to: [power_law]
+
+    # # Sparse density
+    # sparsity:
+    #   enabled: true
+    #   type: float
+    #   bounds: {min: 0.001, max: 0.999}
+    #   applies_to: [sparse]
+
+    # # Block-structure parameters
+    # block_count:
+    #   enabled: true
+    #   type: int
+    #   bounds: {min: 1, max: 128} # depends on the size of the layers
+    #   applies_to: [block_structure]
+    # connection_mode:
+    #   enabled: true
+    #   choices: [diagonal, full]
+    #   applies_to: [block_structure]
+    # within_block_density:
+    #   enabled: true
+    #   type: float
+    #   bounds: {min: 0.0, max: 1.0}
+    #   applies_to: [block_structure]
+    # cross_block_density:
+    #   enabled: true
+    #   type: float
+    #   bounds: {min: 0.0, max: 1.0}
+    #   applies_to: [block_structure]
+
+    # Allow/disallow self connections when mask is square
+    # allow_self_connections:
+    #   enabled: true
+    #   choices: [true, false]
+    #   applies_to: [all_to_all, one_to_one, sparse, block_structure, power_law]
+
+  # Weight initialization parameters (merged into each connection's params)
+  weight_parameters:
+    init_method:
+      enabled: true
+      # choices: [normal, uniform, xavier_normal, xavier_uniform, kaiming_normal, kaiming_uniform, orthogonal, constant]
+      choices: [normal, uniform]
+
+    # normal(init)
+    normal:
+      mean:
+        # enabled: false
+        # value: 0.0
+        enabled: true
+        bounds: {min: -0.1, max: 0.1}
+      std:
+        enabled: true
+        bounds: {min: 0.0, max: 0.5}
+
+    # uniform(init)
+    uniform:
+      min:
+        enabled: true
+        bounds: {min: -1.0, max: 0.0}
+      max:
+        enabled: true
+        bounds: {min: 0.0, max: 1.0}
+
+    # # xavier_normal(init)
+    # xavier_normal:
+    #   gain:
+    #     enabled: true
+    #     bounds: {min: 0.1, max: 5.0}
+
+    # # xavier_uniform(init)
+    # xavier_uniform:
+    #   gain:
+    #     enabled: true
+    #     bounds: {min: 0.1, max: 5.0}
+
+    # # kaiming_normal(init)
+    # kaiming_normal:
+    #   nonlinearity:
+    #     enabled: true
+    #     choices: [relu, leaky_relu]
+    #   a:
+    #     enabled: true
+    #     bounds: {min: 0.0, max: 0.5}
+
+    # # kaiming_uniform(init)
+    # kaiming_uniform:
+    #   nonlinearity:
+    #     enabled: true
+    #     choices: [relu, leaky_relu]
+    #   a:
+    #     enabled: true
+    #     bounds: {min: 0.0, max: 0.5}
+
+    # # orthogonal(init)
+    # orthogonal:
+    #   gain:
+    #     enabled: true
+    #     bounds: {min: 0.1, max: 5.0}
+
+    # # constant(init)
+    # constant:
+    #   value:
+    #     enabled: true
+    #     bounds: {min: -1.0, max: 1.0}
+

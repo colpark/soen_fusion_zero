@@ -1,0 +1,54 @@
+simulation:
+  dt: 195.3125
+  dt_learnable: false
+  input_type: flux
+  track_phi: false
+
+layers:
+  - layer_id: 0
+    layer_type: Input
+    params:
+      dim: 16
+      description: "input"
+
+  - layer_id: 1
+    layer_type: SingleDendrite
+    params:
+      dim: 32
+      solver: FE
+      source_func: Tanh
+      gamma_plus:
+        distribution: fan_out
+        params: { scale: 303.85 }
+      gamma_minus:
+        distribution: loguniform
+        min: 1.0e-6
+        max: 1.0e-2
+      learnable_params:
+        gamma_plus: true
+        gamma_minus: true
+
+  - layer_id: 2
+    layer_type: DendriteReadout
+    params:
+      dim: 10
+
+connections:
+  - from_layer: 0
+    to_layer: 1
+    connection_type: all_to_all
+    params:
+      init: xavier_uniform
+      gain: 1.0
+      constraints: { min: -0.24, max: 0.24 }
+      learnable: true
+
+  - from_layer: 1
+    to_layer: 2
+    connection_type: one_to_one
+    params:
+      init: uniform
+      min: -0.05
+      max: 0.05
+      allow_self_connections: true
+    learnable: true
