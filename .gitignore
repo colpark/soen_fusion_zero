@@ -151,6 +151,9 @@ datasets/
 # Keep tutorial dataset (small, needed for tutorials)
 !**/tutorial_notebooks/training/datasets/*.hdf5
 
+# Keep soen_init_original tutorial dataset for evaluation
+!soen_init_original/src/soen_toolkit/tutorial_notebooks/training/datasets/*.hdf5
+
 # Ignore lock files (use conda/pip)
 poetry.lock
 uv.lock
