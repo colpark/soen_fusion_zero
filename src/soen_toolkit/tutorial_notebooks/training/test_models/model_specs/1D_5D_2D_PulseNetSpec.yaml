@@ -6,19 +6,19 @@
 # ==============================================================================
 #
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                        NOISE CONFIGURATION: DISABLED                       ║
+# ║                        NOISE CONFIGURATION: ENABLED                        ║
 # ╠═══════════════════════════════════════════════════════════════════════════╣
-# ║  This model runs with NO NOISE INJECTION (ideal conditions).              ║
+# ║  This model runs with HARDWARE-REALISTIC NOISE INJECTION.                 ║
 # ║                                                                           ║
-# ║  All noise parameters are set to 0.0:                                     ║
-# ║    • phi (flux noise)         = 0.0                                       ║
-# ║    • s (state noise)          = 0.0                                       ║
-# ║    • g (source function)      = 0.0                                       ║
-# ║    • bias_current             = 0.0                                       ║
-# ║    • j (connection weights)   = 0.0                                       ║
+# ║  Default noise parameters (applied to SOEN layers):                       ║
+# ║    • phi (flux noise)         = 0.01  (1% thermal fluctuations)           ║
+# ║    • s (state noise)          = 0.005 (0.5% integration errors)           ║
+# ║    • bias_current             = 0.02  (2% bias current variation)         ║
+# ║    • j (connection weights)   = 0.01  (1% synaptic noise)                 ║
+# ║    • relative: true           (scale relative to signal magnitude)        ║
 # ║                                                                           ║
-# ║  To enable hardware-realistic noise, set non-zero values in the           ║
-# ║  'noise' and 'perturb' sections of each layer/connection.                 ║
+# ║  To DISABLE noise (ideal conditions), set all values to 0.0 or use        ║
+# ║  the NOISE_ENABLED toggle in the tutorial notebooks.                      ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
 simulation:
@@ -88,12 +88,12 @@ layers:
   model_id: 0
   description: ''
   noise:
-    phi: 0.0
+    phi: 0.01            # 1% flux noise (thermal fluctuations)
     g: 0.0
-    s: 0.0
-    bias_current: 0.0
-    j: 0.0
-    relative: false
+    s: 0.005             # 0.5% state noise (integration errors)
+    bias_current: 0.02   # 2% bias current variation
+    j: 0.01              # 1% synaptic noise
+    relative: true       # Scale relative to signal magnitude
     extras:
       phi_offset: 0.0
       gamma_plus: 0.0
@@ -162,8 +162,8 @@ connections:
     g: 0.0
     s: 0.0
     bias_current: 0.0
-    j: 0.0
-    relative: false
+    j: 0.01              # 1% synaptic noise
+    relative: true
     extras: {}
   perturb:
     phi_mean: 0.0
@@ -197,8 +197,8 @@ connections:
     g: 0.0
     s: 0.0
     bias_current: 0.0
-    j: 0.0
-    relative: false
+    j: 0.01              # 1% synaptic noise
+    relative: true
     extras: {}
   perturb:
     phi_mean: 0.0
@@ -226,8 +226,8 @@ connections:
     g: 0.0
     s: 0.0
     bias_current: 0.0
-    j: 0.0
-    relative: false
+    j: 0.01              # 1% synaptic noise
+    relative: true
     extras: {}
   perturb:
     phi_mean: 0.0
