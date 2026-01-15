@@ -1,0 +1,90 @@
+# ------------------------------------------------------------------------------
+# Experiment Metadata - MINIMAL FIX VERSION
+# ------------------------------------------------------------------------------
+# Only change from original: J_1_to_2.learnable = true (was false)
+# This unblocks gradient flow to the output layer
+description: "Minimal fix training config - only J_1_to_2 learnable changed"
+seed: 1
+
+# ==============================================================================
+# Training Configuration
+# ==============================================================================
+training:
+  # --- Basic Settings ---
+  batch_size: 64
+  max_epochs: 50                 # Increased from 10 for better convergence
+
+  # --- Compute & Hardware Settings ---
+  accelerator: "cpu"
+  precision: "32-true"
+  devices: "auto"
+  num_workers: 0
+  deterministic: false
+
+  # --- Optimizer ---
+  optimizer:
+    name: "adam"
+    lr: 0.001                    # Increased from 0.0001 for faster learning
+
+  # --- Loss Functions ---
+  losses:
+    - name: cross_entropy
+      weight: 1.0
+      params: {}
+
+# ==============================================================================
+# Data Configuration
+# ==============================================================================
+data:
+  data_path: "training/datasets/soen_seq_task_one_or_two_pulses_seq64.hdf5"
+  cache_data: true
+  target_seq_len: 64
+
+# ==============================================================================
+# Model Configuration
+# ==============================================================================
+model:
+  # Points to the FIXED model spec with learnable J_1_to_2
+  base_model_path: "training/test_models/model_specs/1D_5D_2D_PulseNetSpec_trainable.yaml"
+  load_exact_model_state: false
+
+  time_pooling:
+    name: "max"
+    params: {scale: 1.0}
+
+  dt: 779
+
+# ==============================================================================
+# Logging Configuration
+# ==============================================================================
+logging:
+  project_dir: "src/soen_toolkit/tutorial_notebooks/training/temp"
+  project_name: "ExampleTraining"
+  experiment_name: "PulseNet_MinimalFix"
+  group_name: "BaseModel"
+
+  metrics:
+    - "accuracy"
+    - "perplexity"
+    - "bits_per_character"
+
+  log_freq: 50
+  log_batch_metrics: true
+  log_level: "WARNING"
+  log_gradients: false
+
+  track_layer_params: true
+  track_connections: true
+
+# ==============================================================================
+# Callbacks Configuration
+# ==============================================================================
+callbacks:
+  lr_scheduler:
+    type: "cosine"
+    max_lr: 1e-3
+    min_lr: 5e-6
+    warmup_epochs: 5
+    cycle_epochs: 50
+    period_decay: 1.2
+    amplitude_decay: 0.9
