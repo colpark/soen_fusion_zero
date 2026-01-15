@@ -1,0 +1,23 @@
+# SOEN Toolkit - Minimal Conda (fast solve)
+# Only use conda for PyTorch+CUDA, pip handles the rest
+#
+# Install:
+#   conda env create -f environment-minimal.yml --prefix /home/idies/workspace/Temporary/dpark1/scratch/conda/conda_envs/soen
+#
+# Activate:
+#   conda activate /home/idies/workspace/Temporary/dpark1/scratch/conda/conda_envs/soen
+#
+# Then install soen_toolkit:
+#   pip install -e .
+
+name: soen
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+
+dependencies:
+  - python=3.11
+  - pytorch>=2.1
+  - pytorch-cuda=12.4
+  - pip
