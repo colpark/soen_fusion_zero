@@ -134,7 +134,11 @@ Thumbs.db
 
 # Exclude large datasets
 datasets/
-data/
+**/datasets/
+
+# But keep training/data/ module (it's code, not data)
+!**/training/data/
+!**/training/data/*.py
 
 # But keep example configs (override above)
 !**/training/examples/*.yaml
@@ -143,6 +147,9 @@ data/
 
 # Keep critical hardware data files
 !**/source_functions/base_rate_array.soen
+
+# Keep tutorial dataset (small, needed for tutorials)
+!**/tutorial_notebooks/training/datasets/*.hdf5
 
 # Ignore lock files (use conda/pip)
 poetry.lock
