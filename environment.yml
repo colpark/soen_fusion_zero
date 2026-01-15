@@ -23,7 +23,7 @@ dependencies:
 
   # Core scientific (conda handles CUDA better)
   - pytorch>=2.1
-  - pytorch-cuda=12.1  # Remove this line for CPU-only
+  - pytorch-cuda=12.4
   - numpy>=1.24
 
   # JAX (conda-forge)
