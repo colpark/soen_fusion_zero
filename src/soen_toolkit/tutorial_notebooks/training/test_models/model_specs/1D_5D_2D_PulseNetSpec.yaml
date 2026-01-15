@@ -8,14 +8,12 @@
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                        NOISE CONFIGURATION: ENABLED                        ║
 # ╠═══════════════════════════════════════════════════════════════════════════╣
-# ║  This model runs with HARDWARE-REALISTIC NOISE INJECTION.                 ║
+# ║  This model runs with NOISE INJECTION (documented defaults).              ║
 # ║                                                                           ║
 # ║  Default noise parameters (applied to SOEN layers):                       ║
-# ║    • phi (flux noise)         = 0.01  (1% thermal fluctuations)           ║
-# ║    • s (state noise)          = 0.005 (0.5% integration errors)           ║
-# ║    • bias_current             = 0.02  (2% bias current variation)         ║
-# ║    • j (connection weights)   = 0.01  (1% synaptic noise)                 ║
-# ║    • relative: true           (scale relative to signal magnitude)        ║
+# ║    • phi (flux noise)         = 0.01  (noise on input flux)               ║
+# ║    • s (state noise)          = 0.005 (noise on state)                    ║
+# ║    • relative: false          (absolute scaling)                          ║
 # ║                                                                           ║
 # ║  To DISABLE noise (ideal conditions), set all values to 0.0 or use        ║
 # ║  the NOISE_ENABLED toggle in the tutorial notebooks.                      ║
@@ -88,12 +86,12 @@ layers:
   model_id: 0
   description: ''
   noise:
-    phi: 0.01            # 1% flux noise (thermal fluctuations)
+    phi: 0.01            # Noise on input flux
     g: 0.0
-    s: 0.005             # 0.5% state noise (integration errors)
-    bias_current: 0.02   # 2% bias current variation
-    j: 0.01              # 1% synaptic noise
-    relative: true       # Scale relative to signal magnitude
+    s: 0.005             # Noise on state
+    bias_current: 0.0
+    j: 0.0
+    relative: false      # Absolute scaling
     extras:
       phi_offset: 0.0
       gamma_plus: 0.0
@@ -162,8 +160,8 @@ connections:
     g: 0.0
     s: 0.0
     bias_current: 0.0
-    j: 0.01              # 1% synaptic noise
-    relative: true
+    j: 0.0
+    relative: false
     extras: {}
   perturb:
     phi_mean: 0.0
@@ -197,8 +195,8 @@ connections:
     g: 0.0
     s: 0.0
     bias_current: 0.0
-    j: 0.01              # 1% synaptic noise
-    relative: true
+    j: 0.0
+    relative: false
     extras: {}
   perturb:
     phi_mean: 0.0
@@ -226,8 +224,8 @@ connections:
     g: 0.0
     s: 0.0
     bias_current: 0.0
-    j: 0.01              # 1% synaptic noise
-    relative: true
+    j: 0.0
+    relative: false
     extras: {}
   perturb:
     phi_mean: 0.0
