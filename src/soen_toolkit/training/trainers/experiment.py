@@ -25,6 +25,49 @@ import torch
 
 from soen_toolkit.training.callbacks import SCHEDULER_REGISTRY, MetricsTracker
 from soen_toolkit.training.callbacks.checkpointing import InitialModelSaver, SOENModelCheckpoint
+
+
+class SimpleProgressCallback(pl.Callback):
+    """Simple text-based progress callback that prints to stdout without widgets."""
+
+    def __init__(self, log_every_n_steps: int = 100):
+        super().__init__()
+        self.log_every_n_steps = log_every_n_steps
+        self._train_batch_count = 0
+        self._epoch_start_time = None
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        import time
+        self._train_batch_count = 0
+        self._epoch_start_time = time.time()
+        total_batches = len(trainer.train_dataloader) if trainer.train_dataloader else "?"
+        print(f"\n[Epoch {trainer.current_epoch + 1}/{trainer.max_epochs}] Starting training ({total_batches} batches)...")
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        self._train_batch_count += 1
+        if self._train_batch_count % self.log_every_n_steps == 0:
+            loss = outputs.get("loss", None) if isinstance(outputs, dict) else outputs
+            loss_str = f"{loss.item():.4f}" if loss is not None and hasattr(loss, "item") else "N/A"
+            print(f"  [Step {self._train_batch_count}] loss: {loss_str}")
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        import time
+        elapsed = time.time() - self._epoch_start_time if self._epoch_start_time else 0
+        metrics = trainer.callback_metrics
+        train_loss = metrics.get("train_loss/total", metrics.get("train_loss", "N/A"))
+        if hasattr(train_loss, "item"):
+            train_loss = f"{train_loss.item():.4f}"
+        print(f"  [Epoch {trainer.current_epoch + 1}] Train complete in {elapsed:.1f}s | train_loss: {train_loss}")
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        metrics = trainer.callback_metrics
+        val_loss = metrics.get("val_loss/total", metrics.get("val_loss", "N/A"))
+        val_acc = metrics.get("val_accuracy", "N/A")
+        if hasattr(val_loss, "item"):
+            val_loss = f"{val_loss.item():.4f}"
+        if hasattr(val_acc, "item"):
+            val_acc = f"{val_acc.item():.4f}"
+        print(f"  [Epoch {trainer.current_epoch + 1}] Validation | val_loss: {val_loss} | val_accuracy: {val_acc}")
 from soen_toolkit.training.configs import ExperimentConfig, load_config
 from soen_toolkit.training.data import SOENDataModule
 from soen_toolkit.training.models import SOENLightningModule
@@ -523,6 +566,10 @@ class ExperimentRunner:
         """
         callbacks: list[pl.Callback] = []
         repeat_dir = ckpt_dir
+
+        # Add simple text-based progress callback when progress bar is disabled
+        if os.environ.get("SOEN_NO_PROGRESS_BAR", ""):
+            callbacks.append(SimpleProgressCallback(log_every_n_steps=self.config.logging.log_freq))
 
         # Save the initial model state before any training
         if self.config.training.save_initial_state:
