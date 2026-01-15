@@ -1,0 +1,288 @@
+/* Modern Cool Theme - Minimalist white to ice blue to mint gradient */
+
+/* Base window - diagonal gradient background */
+QWidget {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+    stop:0 #ffffff, stop:0.5 #f0f7ff, stop:1 #f0fff4);
+  color: #1a1a1a;
+  font-size: 14pt;
+}
+
+/* Labels - ensure proper text color */
+QLabel {
+  color: #1a1a1a;
+  background-color: transparent;
+}
+
+/* Group boxes - soft gradient with depth */
+QGroupBox {
+  border: 1px solid #d0e0f0;
+  border-radius: 6px;
+  margin-top: 0.9em;
+  padding: 12px;
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #f8fcff);
+}
+QGroupBox::title {
+  subcontrol-origin: margin;
+  left: 12px;
+  padding: 4px 10px;
+  color: #2196f3;
+  font-weight: 700;
+  font-size: 12pt;
+  background: transparent;
+  border-radius: 3px;
+}
+
+/* Tab widget - gradient styling */
+QTabBar::tab {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #f5faff, stop:1 #e8f4ff);
+  padding: 12px 48px;
+  min-width: 100px;
+  border: 1px solid #d0e0f0;
+  border-bottom: none;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  color: #6a7a8a;
+  margin-right: 2px;
+  font-size: 11pt;
+}
+QTabBar::tab:selected {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #fafcff);
+  color: #1a1a1a;
+  font-weight: 600;
+  border-bottom: 3px solid #2196f3;
+}
+QTabBar::tab:hover:!selected {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #fafcff, stop:1 #f0f7ff);
+}
+QTabWidget::pane {
+  border: 1px solid #d0e0f0;
+  top: -1px;
+  border-radius: 6px;
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+    stop:0 #ffffff, stop:0.5 #f0f7ff, stop:1 #f0fff4);
+}
+
+/* Tab content area background */
+QTabWidget > QWidget {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+    stop:0 #ffffff, stop:0.5 #f0f7ff, stop:1 #f0fff4);
+}
+
+/* Buttons - horizontal gradient with smooth transitions */
+QPushButton {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop:0 #e8f4ff, stop:1 #e0f0ff);
+  border: 1px solid #c0d8f0;
+  border-radius: 6px;
+  padding: 7px 14px;
+  color: #1a1a1a;
+  font-weight: 500;
+}
+QPushButton:pressed {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop:0 #d0e8ff, stop:1 #c8e0ff);
+}
+QPushButton:hover {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop:0 #d8f0ff, stop:1 #d0e8ff);
+  border: 1px solid #2196f3;
+}
+QPushButton:focus {
+  border: 2px solid #2196f3;
+  padding: 6px 13px;
+}
+
+/* Spin boxes, combo boxes, line edits - gradient backgrounds */
+QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit {
+  border: 1px solid #d0e0f0;
+  border-radius: 5px;
+  padding: 6px 8px;
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #f8fcff);
+  color: #1a1a1a;
+  font-size: 11pt;
+  selection-background-color: #2196f3;
+  selection-color: #ffffff;
+}
+QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover, QLineEdit:hover {
+  border: 1px solid #b8d0e8;
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #f0f8ff);
+}
+QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QLineEdit:focus {
+  border: 2px solid #2196f3;
+  padding: 5px 7px;
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #f0f8ff);
+}
+
+/* Make spinbox arrows larger and easier to hit */
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+  subcontrol-origin: border;
+  subcontrol-position: top right;
+  width: 24px;
+  height: 17px;
+  border-left: 1px solid #d0e0f0;
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #f8fcff, stop:1 #e8f4ff);
+}
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+  subcontrol-origin: border;
+  subcontrol-position: bottom right;
+  width: 24px;
+  height: 17px;
+  border-left: 1px solid #d0e0f0;
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #e8f4ff, stop:1 #e0f0ff);
+}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #e0f0ff, stop:1 #d8ecff);
+}
+/* Enlarge the arrow glyph area */
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow,
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+  width: 13px; height: 13px;
+}
+QComboBox::drop-down {
+  subcontrol-origin: padding;
+  subcontrol-position: top right;
+  width: 28px;
+  border-left: 1px solid #d0e0f0;
+  background: transparent;
+}
+/* Larger combobox arrow as well */
+QComboBox::down-arrow { 
+  width: 13px; 
+  height: 13px;
+}
+
+/* Dropdown list styling */
+QComboBox QAbstractItemView {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #f8fcff);
+  color: #1a1a1a;
+  selection-background-color: #2196f3;
+  selection-color: #ffffff;
+  border: 1px solid #d0e0f0;
+}
+
+/* Check boxes */
+QCheckBox {
+  color: #1a1a1a;
+  spacing: 6px;
+  font-size: 11pt;
+}
+QCheckBox::indicator {
+  width: 18px;
+  height: 18px;
+  border: 1px solid #d0e0f0;
+  border-radius: 3px;
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #f8fcff);
+}
+QCheckBox::indicator:hover {
+  border: 1px solid #b8d0e8;
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #f0f8ff);
+}
+QCheckBox::indicator:checked {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+    stop:0 #2196f3, stop:1 #1976d2);
+  border: 1px solid #2196f3;
+}
+
+/* QMenu */
+QMenu {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #f8fcff);
+  color: #1a1a1a;
+  border: 1px solid #d0e0f0;
+}
+QMenu::item:selected {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop:0 #2196f3, stop:1 #1976d2);
+  color: #ffffff;
+}
+
+/* Scroll areas */
+QScrollArea {
+  border: none;
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+    stop:0 #ffffff, stop:0.5 #f0f7ff, stop:1 #f0fff4);
+}
+
+/* Scroll bar styling - gradient handles */
+QScrollBar:vertical {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+    stop:0 #ffffff, stop:0.5 #f0f7ff, stop:1 #f0fff4);
+  width: 12px;
+}
+QScrollBar::handle:vertical {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop:0 #b8d0e0, stop:1 #a0c0d0);
+  border-radius: 6px;
+  min-height: 20px;
+}
+QScrollBar::handle:vertical:hover {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop:0 #a0c0d0, stop:1 #88b0c8);
+}
+QScrollBar:horizontal {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+    stop:0 #ffffff, stop:0.5 #f0f7ff, stop:1 #f0fff4);
+  height: 12px;
+}
+QScrollBar::handle:horizontal {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #b8d0e0, stop:1 #a0c0d0);
+  border-radius: 6px;
+  min-width: 20px;
+}
+QScrollBar::handle:horizontal:hover {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #a0c0d0, stop:1 #88b0c8);
+}
+
+/* Toolbars */
+QToolBar {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #f5faff);
+  border-bottom: 1px solid #d0e0f0;
+}
+QToolButton {
+  background: transparent;
+  border: none;
+  padding: 5px;
+  color: #1a1a1a;
+  border-radius: 4px;
+}
+QToolButton:hover {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop:0 #e8f4ff, stop:1 #e0f0ff);
+  border-radius: 4px;
+}
+
+/* Generic item views (drop-downs, list views, tree views) */
+QAbstractItemView, QListView, QTreeView {
+  background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #ffffff, stop:1 #f8fcff);
+  color: #1a1a1a;
+  selection-background-color: #2196f3;
+  selection-color: #ffffff;
+  border: 1px solid #d0e0f0;
+  outline: 0;
+  alternate-background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+    stop:0 #fafcff, stop:1 #f0f8ff);
+}
+QAbstractItemView::item:hover {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop:0 #e8f4ff, stop:1 #e0f0ff);
+}
+

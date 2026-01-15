@@ -1,0 +1,23 @@
+# Test cloud configuration for testing
+aws:
+  role: arn:aws:iam::123456789012:role/TestSageMakerRole
+  bucket: test-soen-bucket
+  region: us-east-1
+
+instance:
+  instance_type: ml.g5.xlarge
+  instance_count: 1
+  use_spot: true
+  max_runtime_hours: 2.0
+
+mlflow:
+  tracking_uri: http://localhost:5000
+  experiment_name: test-experiment
+
+project: test-project
+experiment: test-experiment
+
+docker_images:
+  pytorch: 123456789012.dkr.ecr.us-east-1.amazonaws.com/soen-toolkit:test-pytorch
+  jax: 123456789012.dkr.ecr.us-east-1.amazonaws.com/soen-toolkit:test-jax
+

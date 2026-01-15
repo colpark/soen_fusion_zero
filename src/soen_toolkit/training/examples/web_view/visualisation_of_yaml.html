@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOEN Interactive Configuration Guide</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+            color: #cbd5e1; /* Slate 400 */
+        }
+        .config-card {
+            background-color: #1e293b; /* Slate 800 */
+            border: 1px solid #334155; /* Slate 700 */
+            transition: all 0.3s ease-in-out;
+        }
+        .config-card summary {
+            cursor: pointer;
+            outline: none;
+        }
+        .config-card summary::-webkit-details-marker {
+            display: none;
+        }
+        .config-card summary:hover .group-hover\:text-indigo-400 {
+            color: #818cf8; /* Indigo 400 */
+        }
+        .config-card .icon {
+            transition: transform 0.3s ease;
+        }
+        .config-card[open] .icon {
+            transform: rotate(90deg);
+        }
+        .config-item {
+            border-bottom: 1px solid #334155; /* Slate 700 */
+        }
+        .config-item:last-child {
+            border-bottom: none;
+        }
+        .config-key {
+            color: #94a3b8; /* Slate 400 */
+        }
+        .config-value {
+            color: #f8fafc; /* Slate 50 */
+        }
+        .config-comment {
+            color: #64748b; /* Slate 500 */
+            font-style: italic;
+        }
+        .code-block {
+            background-color: #0f172a;
+            border: 1px solid #334155;
+            padding: 1rem;
+            border-radius: 0.375rem;
+            font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            white-space: pre;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8 max-w-5xl">
+
+        <!-- Header -->
+        <header class="text-center mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">
+                Interactive SOEN Configuration
+            </h1>
+            <p class="mt-4 text-lg text-slate-400">A visual guide to the general purpose training configuration.</p>
+        </header>
+
+        <main class="space-y-6">
+
+            <!-- Experiment Metadata -->
+            <details class="config-card rounded-lg" open>
+                <summary class="p-6 flex justify-between items-center group">
+                    <div class="flex items-center">
+                        <svg class="w-7 h-7 text-indigo-500 mr-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.5h-3.045A4.5 4.5 0 014.5 15.75v-3.045a4.5 4.5 0 014.5-4.5h3.045a4.5 4.5 0 014.5 4.5v3.045a4.5 4.5 0 01-4.5 4.5z" /></svg>
+                        <h2 class="text-2xl font-semibold text-slate-200 group-hover:text-indigo-400">Experiment Metadata</h2>
+                    </div>
+                    <svg class="icon w-6 h-6 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                </summary>
+                <div class="px-6 pb-6 pt-2">
+                    <div class="config-item py-4">
+                        <p class="config-key text-lg font-medium">description</p>
+                        <p class="config-value mt-1">"A brief, human-readable description of the experiment's goal."</p>
+                    </div>
+                    <div class="config-item py-4">
+                        <p class="config-key text-lg font-medium">seed</p>
+                        <p class="config-value mt-1">42</p>
+                        <p class="config-comment mt-1">A base seed for ensuring reproducibility.</p>
+                    </div>
+                </div>
+            </details>
+
+            <!-- Training Configuration -->
+            <details class="config-card rounded-lg">
+                <summary class="p-6 flex justify-between items-center group">
+                    <div class="flex items-center">
+                        <svg class="w-7 h-7 text-cyan-500 mr-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.898 20.562L16.5 21.75l-.398-1.188a3.375 3.375 0 00-2.924-2.924l-1.188-.398 1.188-.398a3.375 3.375 0 002.924-2.924l.398-1.188.398 1.188a3.375 3.375 0 002.924 2.924l1.188.398-1.188.398a3.375 3.375 0 00-2.924 2.924z" /></svg>
+                        <h2 class="text-2xl font-semibold text-slate-200 group-hover:text-indigo-400">Training</h2>
+                    </div>
+                    <svg class="icon w-6 h-6 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                </summary>
+                <div class="px-6 pb-6 pt-2 divide-y divide-slate-700">
+                    <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Basic Settings</h3>
+                        <p><span class="config-key">batch_size:</span> <span class="config-value">64</span></p>
+                        <p><span class="config-key">max_epochs:</span> <span class="config-value">100</span></p>
+                    </div>
+                    <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Autoregressive (AR) Mode</h3>
+                        <p><span class="config-key">autoregressive:</span> <span class="config-value">false</span> <span class="config-comment"># Set to `true` for sequence-to-sequence tasks.</span></p>
+                        <p class="text-slate-500"><span class="config-key"># time_steps_per_token:</span> 1 <span class="config-comment"># (AR Only) Simulation steps per token.</span></p>
+                        <p class="text-slate-500"><span class="config-key"># autoregressive_start_timestep:</span> 0 <span class="config-comment"># (AR Only) Timestep to start loss from.</span></p>
+                    </div>
+                    <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Optimizer</h3>
+                        <p><span class="config-key">name:</span> <span class="config-value">"adamw"</span> <span class="config-comment"># Options: "adamw", "adam", "lion", etc.</span></p>
+                        <p><span class="config-key">lr:</span> <span class="config-value">0.001</span></p>
+                        <p><span class="config-key">kwargs.weight_decay:</span> <span class="config-value">1e-4</span></p>
+                    </div>
+                    <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Loss Functions</h3>
+                        <p class="config-comment mb-2">Define one or more weighted loss components.</p>
+                        <div class="space-y-4">
+                            <div>
+                                <h4 class="font-semibold text-slate-400 mb-1">Example 1: Simple Cross-Entropy</h4>
+                                <div class="code-block">
+- <span class="config-key">name:</span> <span class="config-value">cross_entropy</span>
+  <span class="config-key">weight:</span> <span class="config-value">1.0</span>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-400 mb-1">Example 2: Cross-Entropy + Gap Loss Regularizer</h4>
+                                <div class="code-block text-slate-500">
+# - <span class="config-key">name:</span> <span class="config-value">cross_entropy</span>
+#   <span class="config-key">weight:</span> <span class="config-value">1.0</span>
+# - <span class="config-key">name:</span> <span class="config-value">gap_loss</span>
+#   <span class="config-key">weight:</span> <span class="config-value">0.5</span>
+#   <span class="config-key">params:</span>
+#     <span class="config-key">margin:</span> <span class="config-value">0.2</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <!-- Data Configuration -->
+            <details class="config-card rounded-lg">
+                <summary class="p-6 flex justify-between items-center group">
+                    <div class="flex items-center">
+                        <svg class="w-7 h-7 text-emerald-500 mr-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375" /></svg>
+                        <h2 class="text-2xl font-semibold text-slate-200 group-hover:text-indigo-400">Data</h2>
+                    </div>
+                    <svg class="icon w-6 h-6 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                </summary>
+                <div class="px-6 pb-6 pt-2 divide-y divide-slate-700">
+                    <div class="py-4">
+                        <p><span class="config-key">data_path:</span> <span class="config-value">"path/to/your/dataset.h5"</span></p>
+                        <p><span class="config-key">cache_data:</span> <span class="config-value">true</span></p>
+                        <p><span class="config-key">num_classes:</span> <span class="config-value">10</span> <span class="config-comment"># Must match model's output layer.</span></p>
+                    </div>
+                    <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Preprocessing</h3>
+                        <p><span class="config-key">target_seq_len:</span> <span class="config-value">100</span> <span class="config-comment"># `null` to disable resampling.</span></p>
+                    </div>
+                    <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Input Encoding</h3>
+                        <p><span class="config-key">input_encoding:</span> <span class="config-value">"raw"</span> <span class="config-comment"># Use "one_hot" for character/token data.</span></p>
+                        <p class="text-slate-500"><span class="config-key"># vocab_size:</span> 65 <span class="config-comment"># Required for one_hot encoding.</span></p>
+                    </div>
+                </div>
+            </details>
+
+            <!-- Model Configuration -->
+            <details class="config-card rounded-lg">
+                <summary class="p-6 flex justify-between items-center group">
+                    <div class="flex items-center">
+                        <svg class="w-7 h-7 text-rose-500 mr-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25z" /></svg>
+                        <h2 class="text-2xl font-semibold text-slate-200 group-hover:text-indigo-400">Model</h2>
+                    </div>
+                    <svg class="icon w-6 h-6 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                </summary>
+                <div class="px-6 pb-6 pt-2 divide-y divide-slate-700">
+                     <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Base Model</h3>
+                        <p><span class="config-key">base_model_path:</span> <span class="config-value">"path/to/your/base_model.pth"</span></p>
+                        <p><span class="config-key">load_exact_model_state:</span> <span class="config-value">false</span></p>
+                    </div>
+                     <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Simulation</h3>
+                        <p><span class="config-key">dt:</span> <span class="config-value">195.3125</span></p>
+                        <p><span class="config-key">dt_learnable:</span> <span class="config-value">false</span></p>
+                    </div>
+                </div>
+            </details>
+
+            <!-- Callbacks Configuration -->
+            <details class="config-card rounded-lg" open>
+                <summary class="p-6 flex justify-between items-center group">
+                    <div class="flex items-center">
+                        <svg class="w-7 h-7 text-amber-500 mr-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0h18M-4.5 12h22.5" /></svg>
+                        <h2 class="text-2xl font-semibold text-slate-200 group-hover:text-indigo-400">Callbacks</h2>
+                    </div>
+                    <svg class="icon w-6 h-6 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                </summary>
+                <div class="px-6 pb-6 pt-2 space-y-6">
+                    <div>
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Learning Rate Scheduler</h3>
+                        <p class="config-comment mb-4">Controls how the learning rate changes during training. Choose one option.</p>
+                        <div class="space-y-4">
+                            <div>
+                                <h4 class="font-semibold text-slate-400 mb-1">Option 1: Constant</h4>
+                                <div class="code-block">
+<span class="config-key">lr_scheduler:</span>
+  <span class="config-key">type:</span> <span class="config-value">"constant"</span>
+  <span class="config-key">lr:</span> <span class="config-value">0.001</span>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-400 mb-1">Option 2: Cosine Annealing</h4>
+                                <div class="code-block text-slate-500">
+# <span class="config-key">lr_scheduler:</span>
+#   <span class="config-key">type:</span> "cosine"
+#   <span class="config-key">max_lr:</span> 0.001
+#   <span class="config-key">min_lr:</span> 1e-6
+#   <span class="config-key">warmup_epochs:</span> 5
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pt-6 border-t border-slate-700">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Early Stopping</h3>
+                        <p class="config-comment mb-4">Stops training if a monitored metric ceases to improve.</p>
+                        <div class="code-block text-slate-500">
+# <span class="config-key">early_stopping:</span>
+#   <span class="config-key">monitor:</span> "val_loss"
+#   <span class="config-key">patience:</span> 10
+#   <span class="config-key">mode:</span> "min"
+                        </div>
+                    </div>
+                </div>
+            </details>
+            
+            <!-- Logging Configuration -->
+            <details class="config-card rounded-lg">
+                <summary class="p-6 flex justify-between items-center group">
+                    <div class="flex items-center">
+                        <svg class="w-7 h-7 text-fuchsia-500 mr-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6a7.5 7.5 0 100 15 7.5 7.5 0 000-15z" /><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 10.5c0 1.141-.448 2.162-1.172 2.924l-3.328 3.328M10.5 10.5c0-1.141.448-2.162 1.172-2.924l3.328-3.328M10.5 10.5c1.141 0 2.162.448 2.924 1.172l3.328 3.328M10.5 10.5c-1.141 0-2.162-.448-2.924-1.172L4.252 7.5" /></svg>
+                        <h2 class="text-2xl font-semibold text-slate-200 group-hover:text-indigo-400">Logging</h2>
+                    </div>
+                    <svg class="icon w-6 h-6 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                </summary>
+                <div class="px-6 pb-6 pt-2 divide-y divide-slate-700">
+                     <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Directories & Naming</h3>
+                        <p><span class="config-key">checkpoint_dir:</span> <span class="config-value">"checkpoints/"</span></p>
+                        <p><span class="config-key">log_dir:</span> <span class="config-value">"logs/"</span></p>
+                        <p><span class="config-key">project_name:</span> <span class="config-value">"SOEN_Experiments"</span></p>
+                        <p><span class="config-key">experiment_name:</span> <span class="config-value">null</span> <span class="config-comment"># `null` to auto-generate a name.</span></p>
+                    </div>
+                     <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Metrics to Track</h3>
+                        <div class="code-block">
+<span class="config-key">metrics:</span> [
+  <span class="config-value">"accuracy"</span>,             <span class="config-comment"># Becomes autoregressive_accuracy in AR mode</span>
+  <span class="config-value">"perplexity"</span>,           <span class="config-comment"># Universal metric for sequence models</span>
+  <span class="config-value">"bits_per_character"</span>, <span class="config-comment"># Universal metric for sequence models</span>
+  <span class="config-value">"top_3_accuracy"</span>,     <span class="config-comment"># Example of top-k accuracy</span>
+]
+                        </div>
+                    </div>
+                     <div class="py-4">
+                        <h3 class="text-xl font-semibold text-slate-300 mb-2">Advanced Debugging & Probing</h3>
+                        <p><span class="config-key">log_gradients:</span> <span class="config-value">false</span> <span class="config-comment"># Log histograms of parameter gradients.</span></p>
+                        <p><span class="config-key">track_learnable_params:</span> <span class="config-value">false</span> <span class="config-comment"># Log histograms of learnable parameters.</span></p>
+                    </div>
+                </div>
+            </details>
+
+        </main>
+
+        <footer class="text-center mt-16 text-slate-500 text-sm">
+            <p>SOEN Interactive Configuration Guide</p>
+        </footer>
+
+    </div>
+
+</body>
+</html>

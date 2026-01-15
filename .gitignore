@@ -1,0 +1,149 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+conda_envs/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints/
+
+# Data files - DO NOT COMMIT
+*.hdf5
+*.h5
+*.soen
+*.pth
+*.pt
+*.ckpt
+*.pkl
+*.pickle
+
+# Large model files
+*.onnx
+*.safetensors
+
+# Logs and outputs
+*.log
+logs/
+runs/
+mlruns/
+lightning_logs/
+tensorboard_logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Criticality artifacts
+**/criticality_runs/
+**/ModelSpecs/
+**/Figures/
+
+# Training artifacts
+**/checkpoints/
+**/saved_models/
+
+# Exclude large datasets
+datasets/
+data/
+
+# But keep example configs (override above)
+!**/training/examples/*.yaml
+!**/training/test_models/**/*.yaml
+!**/model_specs/*.yaml
+
+# Keep critical hardware data files
+!**/source_functions/base_rate_array.soen
+
+# Ignore lock files (use conda/pip)
+poetry.lock
+uv.lock

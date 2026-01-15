@@ -1,0 +1,63 @@
+# SOEN Toolkit - Full Requirements
+# Generated from pyproject.toml
+# Install with: pip install -r requirements.txt
+
+# Core scientific stack
+numpy>=1.24
+torch>=2.1
+jax>=0.6.0
+equinox>=0.13.0
+
+# ML training
+lightning==2.5.2
+pytorch-lightning==2.5.2
+lion-pytorch==0.2.3
+torchdiffeq>=0.2.5
+optax>=0.2.4
+
+# Data & visualization
+matplotlib>=3.7
+pandas>=2.0
+seaborn>=0.12
+networkx>=2.5
+scikit-learn>=1.3
+h5py>=3.10.0
+
+# Utilities
+PyYAML
+tqdm>=4.67.1
+tabulate>=0.9.0
+natsort>=8.0.0
+graphviz>=0.20.3
+pydot>=1.4.2
+
+# Audio (for audio tasks)
+librosa>=0.10.0
+
+# Tracking & logging
+tensorboard>=2.14
+tbparse>=0.0.9
+mlflow>=3.3.2,<4
+protobuf>=4,<5
+
+# Web/API
+flask>=3.0
+boto3
+
+# Cloud
+sagemaker>=2.254,<3
+
+# Notebook support
+ipykernel
+ipywidgets>=8
+bokeh>=3.3
+plotly>=5
+jedi>=0.16
+
+# Testing
+pytest
+
+# GUI (comment out for headless servers)
+# pyqt6>=6.8.1
+# pyqt6-webengine>=6.9.0,<6.10
+# pyqtgraph==0.13.7

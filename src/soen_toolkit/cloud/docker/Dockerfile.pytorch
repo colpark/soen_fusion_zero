@@ -1,0 +1,63 @@
+# SOEN Toolkit - PyTorch Training Image
+# 
+# Build: docker build -t soen-toolkit:pytorch -f Dockerfile.pytorch .
+# Push:  docker push <account>.dkr.ecr.<region>.amazonaws.com/soen-toolkit:pytorch
+#
+# Run from project root:
+#   docker build -t soen-toolkit:pytorch -f src/soen_toolkit/cloud/docker/Dockerfile.pytorch .
+
+FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Python environment settings
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /opt/ml/code
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency specification first for layer caching
+COPY pyproject.toml README.md ./
+
+# Install dependencies
+# Using the full set of optional dependencies for cloud training
+RUN pip install --upgrade pip && \
+    pip install ".[cloud,tracking,distributed,vision]"
+
+# Copy source code
+COPY src/ ./src/
+
+# Install the package itself
+RUN pip install --no-deps .
+
+# Copy entrypoint script
+COPY src/soen_toolkit/cloud/docker/entrypoint.py /opt/ml/code/entrypoint.py
+
+# CRITICAL: Force numpy<2 LAST to fix PyTorch/NumPy compatibility
+# PyTorch 2.2.0 was compiled against NumPy 1.x and crashes with NumPy 2.x
+RUN pip install "numpy<2" --force-reinstall
+
+# Verify installations
+RUN python -c "import numpy; print(f'NumPy version: {numpy.__version__}')" && \
+    python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
+
+# Set Python path to include src directory
+ENV PYTHONPATH=/opt/ml/code:/opt/ml/code/src
+
+# Default environment variables
+ENV SOEN_BACKEND=pytorch \
+    SOEN_JOB_TYPE=training
+
+# SageMaker uses this as the training script
+ENTRYPOINT ["python", "/opt/ml/code/entrypoint.py"]
+

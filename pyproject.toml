@@ -1,0 +1,227 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "soen-toolkit"
+version = "0.1.13"
+description = "Simulation Package for Superconducting Optoelectronic Networks"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  {name = "Matthew Cox", email = "cox@greatsky.ai"}
+]
+
+dependencies = [
+  "numpy>=1.24",
+  "jax>=0.6.0",
+  "equinox>=0.13.0",
+  "flask>=3.0",
+  "matplotlib>=3.7",
+  "networkx>=2.5",
+  "pandas>=2.0",
+  "scikit-learn>=1.3",
+  "seaborn>=0.12",
+  "torch>=2.1",
+  "lion-pytorch==0.2.3",
+  "graphviz>=0.20.3",
+  "tabulate>=0.9.0",
+  "h5py>=3.10.0",
+  "tqdm>=4.67.1",
+  "tensorboard>=2.14",
+  "lightning==2.5.2",
+  "pytorch-lightning==2.5.2",
+  "torchdiffeq>=0.2.5; python_version < '4.0'",
+  "pydot>=1.4.2",
+  "tbparse>=0.0.9",
+  "librosa>=0.10.0",
+  "natsort>=8.0.0",
+  "PyYAML",
+  "protobuf>=4,<5",
+  "mlflow>=3.3.2,<4",
+  "boto3",
+  "optax>=0.2.4",
+
+  # notebook
+  "ipykernel",
+  "ipywidgets>=8",
+  "bokeh>=3.3",
+  "plotly>=5",
+  "jedi>=0.16",
+
+  # gui
+  "pyqt6>=6.8.1",
+  "pyqt6-webengine>=6.9.0,<6.10",
+  "pyqtgraph==0.13.7",
+
+
+  # test
+  "pytest",
+
+
+  # cloud (sagemaker v3.x has breaking API changes, need v2.254+ for numpy 2.x compat)
+  "sagemaker>=2.254,<3",
+]
+
+[project.optional-dependencies]
+
+
+cloud = [
+  "s3fs==2025.3.0",
+  "fsspec==2025.3.0",
+  "gcsfs==2025.3.0",
+]
+distributed = [
+  "ray[train]==2.48.0",
+]
+vision = [
+  "torchvision",
+  "torchaudio",
+]
+muon = [
+  "muon",
+]
+criticality = [
+  "optuna>=3.6",
+  "bokeh>=3.3",
+  "plotly>=5",
+]
+tracking = [
+  "mlflow>=3.3.2,<4",
+]
+profiling = [
+  "tensorflow>=2.14",
+]
+
+# Small interactive demos (kept optional to avoid pulling UI deps by default)
+playground = [
+  "streamlit>=1.41",
+]
+
+
+
+[project.scripts]
+train = "soen_toolkit.training.__main__:main"
+gui = "soen_toolkit.model_creation_gui.__main__:main"
+cloud_gui ="soen_toolkit.cloud_gui.__main__:main"
+
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/soen_toolkit"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  # Legacy paths (kept for safety if present)
+  "src/soen_toolkit/Criticality/criticality_runs",
+  "src/soen_toolkit/Criticality/ModelSpecs",
+  "src/soen_toolkit/Criticality/Figures",
+  # Current utils/criticality artifacts we don't want in wheels
+  "src/soen_toolkit/utils/criticality/criticality_runs",
+  "src/soen_toolkit/utils/criticality/ModelSpecs",
+  "src/soen_toolkit/utils/criticality/Figures",
+]
+
+# Include data files automatically via MANIFEST.in or by placing them in the package
+[tool.hatch.build.targets.wheel.shared-data]
+# For now, rely on MANIFEST.in which hatchling respects
+
+[tool.ruff]
+line-length = 200
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+  "E",  # pycodestyle (errors)
+  "F",  # pyflakes
+  "W",  # pycodestyle (warnings)
+  "I",  # isort
+  "UP", # pyupgrade
+  "B",  # flake8-bugbear
+  "PL", # pylint (subset)
+]
+ignore = [
+  "E203",    # whitespace before ':' — compatibility with black-style slices
+  "PLR0911", # too many return statements
+  "PLR0912", # too many branches
+  "PLR0913", # too many arguments
+  "PLR0915", # too many statements
+  "PLR2004", # magic value in comparison
+  "PLW2901", # loop variable overwritten by assignment
+  "PLR0124", # name compared with itself
+  "PLW0603", # global statement used
+  "PLW0602", # global variable undefined
+  "PLC0415", # import should be at top-level (many lazy imports for circular dependency avoidance)
+  "B023",    # function definition does not bind loop variable (often intentional with closures)
+  "B007",    # unused loop control variable (often intentional for counting/unpacking)
+  "B008",    # function call in argument defaults (PyQt pattern)
+  "B027",    # empty method in abstract base class without abstract decorator
+  "B904",    # exception chaining - would require manual review of each case
+  "PLC2401", # non-ASCII characters in names (lambda symbols are intentional)
+  "UP007",   # use X | Y for type annotations (keeping Optional for clarity in some cases)
+]
+extend-select = ["T20"] # T201: print found
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["T201"]
+"docs/*" = ["T201"]
+"src/soen_toolkit/utils/SageMaker/tools/launch_sm_from_bundle.py" = ["T201"]
+"src/soen_toolkit/training/trainers/experiment.py" = ["T201"]  # print() used for user-facing training summaries
+"src/soen_toolkit/tutorial_notebooks/**/*.ipynb" = ["T201", "W293"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["soen_toolkit"]
+combine-as-imports = true
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src/soen_toolkit"]
+ignore_missing_imports = true
+
+# Relaxed for incremental adoption - re-enable strict checks module by module
+disallow_untyped_defs = false
+warn_return_any = false
+warn_unused_ignores = true
+
+# Exclude test files from type checking (they don't benefit as much from strict typing)
+[[tool.mypy.overrides]]
+module = ["soen_toolkit.tests.*", "soen_toolkit.*.tests.*"]
+ignore_errors = true
+
+# Enable strict typing for modules incrementally
+[[tool.mypy.overrides]]
+module = "soen_toolkit.nn.*"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "soen_toolkit.train.*"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "soen_toolkit.robustness_tool.*"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "soen_toolkit.cloud_gui.*"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "soen_toolkit.cloud.*"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "soen_toolkit.analysis.*"
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "soen_toolkit.physics.*"
+disallow_untyped_defs = true
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.0",
+    "types-PyYAML>=6.0.12",
+]

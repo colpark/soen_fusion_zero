@@ -1,0 +1,87 @@
+# SOEN Cloud Configuration Example
+#
+# This file configures cloud training, inference, and processing jobs.
+# Copy this file and modify for your use case.
+#
+# Environment variables can override these settings:
+#   SOEN_SM_ROLE: SageMaker execution role ARN
+#   SOEN_SM_BUCKET: S3 bucket name
+#   MLFLOW_TRACKING_URI: MLflow server URI
+
+# AWS Configuration (required)
+aws:
+  # SageMaker execution role ARN
+  # Create this role with AmazonSageMakerFullAccess and S3 access policies
+  role: arn:aws:iam::123456789012:role/sagemaker-execution-role
+  
+  # S3 bucket for storing configs, data, and model artifacts
+  bucket: my-soen-training-bucket
+  
+  # AWS region (defaults to us-east-1)
+  region: us-east-1
+
+# Instance Configuration (optional, has sensible defaults)
+instance:
+  # SageMaker instance type
+  # GPU options: ml.g5.xlarge, ml.g5.2xlarge, ml.g6.xlarge, ml.p4d.24xlarge
+  # CPU options: ml.c7i.4xlarge, ml.c6i.xlarge, ml.m7i.xlarge, ml.m5.xlarge
+  instance_type: ml.g5.xlarge
+  
+  # Number of instances (>1 enables distributed training)
+  instance_count: 1
+  
+  # Use spot instances for cost savings (~65% discount)
+  # Jobs may be interrupted if capacity is unavailable
+  use_spot: true
+  
+  # Maximum runtime in hours (job fails if exceeded)
+  max_runtime_hours: 24.0
+
+# MLflow Tracking (optional)
+mlflow:
+  # MLflow tracking server URI
+  # Options:
+  #   - HTTP: http://mlflow.mycompany.com:5000
+  #   - S3: s3://my-bucket/mlflow (serverless tracking store)
+  tracking_uri: http://mlflow.example.com:5000
+  
+  # Experiment name for organizing runs
+  experiment_name: soen-cloud-training
+
+# Project Organization
+project: my-project
+experiment: experiment-001
+
+# Docker Images
+# These images are built and pushed using:
+#   cd src/soen_toolkit/cloud/docker
+#   ./build.sh <ecr-repo-uri>
+docker_images:
+  pytorch: 123456789012.dkr.ecr.us-east-1.amazonaws.com/soen-toolkit:latest-pytorch
+  jax: 123456789012.dkr.ecr.us-east-1.amazonaws.com/soen-toolkit:latest-jax
+
+
+# -------------------------------------------------------------------
+# USAGE EXAMPLES
+# -------------------------------------------------------------------
+#
+# Submit a training job:
+#   soen cloud train --config experiment.yaml --cloud-config cloud_config.yaml
+#
+# Show cost estimate first:
+#   soen cloud train --config experiment.yaml --cloud-config cloud_config.yaml --estimate
+#
+# Use JAX backend:
+#   soen cloud train --config experiment.yaml --cloud-config cloud_config.yaml --backend jax
+#
+# Multi-node training (2 nodes with DDP):
+#   soen cloud train --config experiment.yaml --cloud-config cloud_config.yaml --instance-count 2
+#
+# Check job status:
+#   soen cloud status soen-training-20240101120000 --cloud-config cloud_config.yaml
+#
+# List recent jobs:
+#   soen cloud list --cloud-config cloud_config.yaml
+#
+# -------------------------------------------------------------------
+

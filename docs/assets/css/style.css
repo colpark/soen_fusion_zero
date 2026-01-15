@@ -1,0 +1,177 @@
+/* Custom styles for SOEN-Toolkit Documentation */
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.6;
+  color: #1f2937;
+  margin: 0;
+  min-height: 100vh;
+  background-color: #eaf0ff;
+  background-image: linear-gradient(140deg, #e6f0ff 0%, #dde6ff 42%, #e3dcff 100%);
+  background-attachment: fixed;
+  background-size: cover;
+}
+
+/* Limit image sizes */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1em auto;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #2c3e50;
+  margin-top: 2em;
+  margin-bottom: 1em;
+}
+
+h1 {
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 10px;
+}
+
+/* Inline code */
+code {
+  background-color: #f6f8fa;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, "Courier New", monospace;
+  font-size: 0.9em;
+  color: #24292f;
+  border: 1px solid #e1e4e8;
+}
+
+/* Code blocks - basic styling only, syntax colors in syntax.css */
+pre {
+  background-color: #f6f8fa;
+  padding: 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  border: 1px solid #e1e4e8;
+  line-height: 1.45;
+  margin: 1em 0;
+}
+
+pre code {
+  background-color: transparent;
+  padding: 0;
+  border: none;
+  font-size: 0.875em;
+  color: #24292f;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+table th, table td {
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+table th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+}
+
+.page-content {
+  padding: 32px 16px 48px;
+}
+
+.page-content .wrapper {
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(17, 24, 39, 0.08);
+  padding: 32px 28px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+@media (max-width: 768px) {
+  .page-content {
+    padding: 20px 12px 32px;
+  }
+
+  .page-content .wrapper {
+    padding: 20px 18px;
+    border-radius: 10px;
+  }
+}
+
+blockquote {
+  border-left: 4px solid #3498db;
+  margin: 1em 0;
+  padding-left: 20px;
+  color: #666;
+}
+
+a {
+  color: #3498db;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* Navigation styling - exclude table links from button styling */
+div[align="center"]:not(:has(table)) {
+  margin: 2em 0;
+  padding: 1em;
+  background-color: #f8f9fa;
+  border-radius: 5px;
+}
+
+div[align="center"]:not(:has(table)) a {
+  display: inline-block;
+  padding: 8px 16px;
+  margin: 0 5px;
+  background-color: #3498db;
+  color: white;
+  border-radius: 3px;
+  text-decoration: none;
+}
+
+div[align="center"]:not(:has(table)) a:hover {
+  background-color: #2980b9;
+  text-decoration: none;
+}
+
+/* Home button variant */
+div[align="center"]:not(:has(table)) a.nav-home {
+  background-color: #10b981; /* emerald-500 */
+  border: 1px solid #0f766e; /* teal-ish border to stand out */
+  font-weight: 600;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+div[align="center"]:not(:has(table)) a.nav-home:hover {
+  background-color: #059669; /* emerald-600 */
+}
+
+/* Minimal styling for platform links used inside the Markdown table */
+.platform-link {
+  display: inline-block;
+  padding: 10px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  text-align: center;
+  color: inherit;
+  text-decoration: none;
+}
+.platform-link:hover,
+.platform-link:focus { text-decoration: none; box-shadow: 0 2px 8px rgba(0,0,0,0.08); color: inherit; }
+.platform-link.mac { border-color: #10b981; }
+.platform-link.win { border-color: #3b82f6; }
+.platform-link.linux { border-color: #f59e0b; }
+.platform-link.wsl2 { border-color: #ec4899; }

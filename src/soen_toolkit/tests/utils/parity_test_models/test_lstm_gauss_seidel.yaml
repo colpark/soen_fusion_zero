@@ -1,0 +1,14 @@
+simulation:
+  dt: 1.0
+  network_evaluation_method: stepwise_gauss_seidel
+  input_type: flux
+
+layers:
+- layer_id: 0
+  layer_type: LSTM
+  params:
+    dim: 16
+  description: LSTM test layer with Gauss-Seidel solver
+
+connections: []
+

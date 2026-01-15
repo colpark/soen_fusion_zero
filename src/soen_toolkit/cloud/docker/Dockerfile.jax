@@ -1,0 +1,88 @@
+# SOEN Toolkit - JAX Training Image
+#
+# This image uses JAX with CUDA support. PyTorch is included as CPU-only
+# to avoid CUDA library conflicts between PyTorch and JAX.
+#
+# Build: docker build -t soen-toolkit:jax -f Dockerfile.jax .
+# Push:  docker push <account>.dkr.ecr.<region>.amazonaws.com/soen-toolkit:jax
+#
+# Run from project root:
+#   docker build -t soen-toolkit:jax -f src/soen_toolkit/cloud/docker/Dockerfile.jax .
+
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Python environment settings
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /opt/ml/code
+
+# Install Python and system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3.10-dev \
+    python3-pip \
+    python3.10-venv \
+    build-essential \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python3
+
+# Upgrade pip
+RUN pip install --upgrade pip setuptools wheel
+
+# Install CPU-only PyTorch FIRST to avoid any CUDA conflicts with JAX
+# JAX handles all GPU compute; PyTorch is only for data loading
+RUN pip install \
+    torch==2.2.0+cpu \
+    torchvision==0.17.0+cpu \
+    torchaudio==2.2.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Copy dependency specification
+COPY pyproject.toml README.md ./
+
+# Install soen_toolkit dependencies, but EXCLUDE jax to avoid version conflicts
+# We'll install JAX with CUDA support separately at the end
+RUN pip install ".[cloud,tracking,distributed,vision]" \
+    && pip uninstall -y jax jaxlib 2>/dev/null || true
+
+# Copy source code
+COPY src/ ./src/
+
+# Install the package
+RUN pip install --no-deps .
+
+# Copy entrypoint script
+COPY src/soen_toolkit/cloud/docker/entrypoint.py /opt/ml/code/entrypoint.py
+
+# Install JAX with CUDA support LAST to ensure correct versions
+# This overwrites any JAX installed by dependencies
+RUN pip install "jax[cuda12]==0.4.28" \
+    -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+
+# CRITICAL: Force numpy<2 LAST to fix PyTorch/NumPy compatibility
+# PyTorch 2.2.0 was compiled against NumPy 1.x and crashes with NumPy 2.x
+RUN pip install "numpy<2" --force-reinstall
+
+# Verify installations
+RUN python -c "import numpy; print(f'NumPy version: {numpy.__version__}')" && \
+    python -c "import jax; print(f'JAX version: {jax.__version__}')" && \
+    python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
+
+# Set Python path
+ENV PYTHONPATH=/opt/ml/code:/opt/ml/code/src
+
+# Default environment variables
+ENV SOEN_BACKEND=jax \
+    SOEN_JOB_TYPE=training
+
+# SageMaker entrypoint
+ENTRYPOINT ["python", "/opt/ml/code/entrypoint.py"]

@@ -1,0 +1,222 @@
+simulation:
+  dt: 200.0
+  dt_learnable: false
+  input_type: state
+  track_power: false
+  track_phi: true
+  track_g: false
+  track_s: false
+layers:
+- layer_id: 0
+  layer_type: Input
+  params:
+    dim: 1
+  model_id: 0
+  description: ''
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+- layer_id: 1
+  layer_type: SingleDendrite
+  params:
+    learnable_params:
+      phi_offset: false
+      bias_current: false
+      gamma_plus: false
+      gamma_minus: false
+    phi_offset:
+      distribution: constant
+      params:
+        value: 0.02141636091392929
+    bias_current:
+      distribution: uniform
+      params:
+        min: 1.9398465565322294
+        max: 2.0119075579020644
+    gamma_plus:
+      distribution: constant
+      params:
+        value: 0.00013164
+    gamma_minus:
+      distribution: constant
+      params:
+        value: 1.0675514902601577e-08
+    dim: 5
+    solver: FE
+    source_func: Heaviside_fit_state_dep
+  model_id: 0
+  description: ''
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras:
+      phi_offset: 0.0
+      gamma_plus: 0.0
+      gamma_minus: 0.0
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean:
+      phi_offset: 0.0
+      gamma_plus: 0.0
+      gamma_minus: 0.0
+    extras_std:
+      phi_offset: 0.0
+      gamma_plus: 0.0
+      gamma_minus: 0.0
+- layer_id: 2
+  layer_type: Input
+  params:
+    dim: 2
+  model_id: 0
+  description: ''
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+connections:
+- from_layer: 0
+  to_layer: 1
+  connection_type: all_to_all
+  params:
+    min: 0.17266182375659314
+    max: 0.23953966193035758
+    init: uniform
+    allow_self_connections: 'True'
+    constraints:
+      min: -0.24
+      max: 0.24
+  learnable: true
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+- from_layer: 1
+  to_layer: 1
+  connection_type: all_to_all
+  params:
+    min: -0.24
+    max: 0.24
+    init: normal
+    allow_self_connections: 'False'
+    constraints:
+      min: -0.24
+      max: 0.24
+    mean: 0.14818640930758226
+    std: 0.2
+  learnable: true
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+- from_layer: 1
+  to_layer: 2
+  connection_type: one_to_one
+  params:
+    value: 1.0
+    init: constant
+    allow_self_connections: true
+  learnable: false
+  noise:
+    phi: 0.0
+    g: 0.0
+    s: 0.0
+    bias_current: 0.0
+    j: 0.0
+    relative: false
+    extras: {}
+  perturb:
+    phi_mean: 0.0
+    phi_std: 0.0
+    g_mean: 0.0
+    g_std: 0.0
+    s_mean: 0.0
+    s_std: 0.0
+    bias_current_mean: 0.0
+    bias_current_std: 0.0
+    j_mean: 0.0
+    j_std: 0.0
+    extras_mean: {}
+    extras_std: {}
+seed: 1
