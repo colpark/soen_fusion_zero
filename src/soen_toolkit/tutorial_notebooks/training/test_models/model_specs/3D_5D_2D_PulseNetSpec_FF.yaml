@@ -1,0 +1,271 @@
+# ==============================================================================
+# Forward-Forward SOEN Model Specification
+# ==============================================================================
+# Architecture: 3D → 5D (SingleDendrite) → 2D (Output)
+#
+# This is the FF-compatible version of 1D_5D_2D_PulseNetSpec_trainable.yaml
+# Key difference: Input dim = 3 (1 signal + 2 one-hot label)
+#
+# For Forward-Forward learning:
+#   - Label is embedded in INPUT at every timestep
+#   - POSITIVE: signal + correct label → high goodness desired
+#   - NEGATIVE: signal + wrong label → low goodness desired
+#   - Each layer learns locally based on goodness
+#
+# ==============================================================================
+simulation:
+  dt: 200.0
+  dt_learnable: false
+  input_type: state
+  track_power: false
+  track_phi: true
+  track_g: false
+  track_s: true  # Enable state tracking for FF goodness computation
+
+layers:
+  # ---------------------------------------------------------------------------
+  # Layer 0: Input Layer
+  # dim = 3: [signal (1), label_class_0 (1), label_class_1 (1)]
+  # ---------------------------------------------------------------------------
+  - layer_id: 0
+    layer_type: Input
+    params:
+      dim: 3  # Changed from 1 to 3 for FF label embedding
+    model_id: 0
+    description: 'Input with embedded label (signal + one-hot)'
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # ---------------------------------------------------------------------------
+  # Layer 1: Hidden SOEN Layer (SingleDendrite)
+  # Same as original - 5 neurons with recurrence
+  # ---------------------------------------------------------------------------
+  - layer_id: 1
+    layer_type: SingleDendrite
+    params:
+      learnable_params:
+        phi_offset: false
+        bias_current: false
+        gamma_plus: false
+        gamma_minus: false
+      phi_offset:
+        distribution: constant
+        params:
+          value: 0.02141636091392929
+      bias_current:
+        distribution: uniform
+        params:
+          min: 1.9398465565322294
+          max: 2.0119075579020644
+      gamma_plus:
+        distribution: constant
+        params:
+          value: 0.00013164
+      gamma_minus:
+        distribution: constant
+        params:
+          value: 1.0675514902601577e-08
+      dim: 5
+      solver: FE
+      source_func: Heaviside_fit_state_dep
+    model_id: 0
+    description: 'Hidden SOEN layer - goodness computed from states'
+    noise:
+      phi: 0.01
+      g: 0.0
+      s: 0.005
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+      extras_std:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+
+  # ---------------------------------------------------------------------------
+  # Layer 2: Output Layer (for readout, not used in FF training)
+  # ---------------------------------------------------------------------------
+  - layer_id: 2
+    layer_type: Input
+    params:
+      dim: 2
+    model_id: 0
+    description: 'Output layer (2 classes)'
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+connections:
+  # ---------------------------------------------------------------------------
+  # J_0_to_1: Input → Hidden (3 → 5)
+  # Now 3x5 = 15 weights (was 1x5 = 5)
+  # ---------------------------------------------------------------------------
+  - from_layer: 0
+    to_layer: 1
+    connection_type: all_to_all
+    params:
+      min: 0.1
+      max: 0.3
+      init: uniform
+      allow_self_connections: 'True'
+      constraints:
+        min: -0.5
+        max: 0.5
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # ---------------------------------------------------------------------------
+  # J_1_to_1: Hidden → Hidden (recurrent, 5 → 5)
+  # Same as original - 20 weights (no self-connections)
+  # ---------------------------------------------------------------------------
+  - from_layer: 1
+    to_layer: 1
+    connection_type: all_to_all
+    params:
+      min: -0.24
+      max: 0.24
+      init: normal
+      allow_self_connections: 'False'
+      constraints:
+        min: -0.24
+        max: 0.24
+      mean: 0.14818640930758226
+      std: 0.2
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # ---------------------------------------------------------------------------
+  # J_1_to_2: Hidden → Output (5 → 2)
+  # Used for inference/readout
+  # ---------------------------------------------------------------------------
+  - from_layer: 1
+    to_layer: 2
+    connection_type: all_to_all
+    params:
+      mean: 0.0
+      std: 0.1
+      init: normal
+      allow_self_connections: true
+      constraints:
+        min: -1.0
+        max: 1.0
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+seed: 42
