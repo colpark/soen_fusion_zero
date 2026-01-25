@@ -249,3 +249,99 @@ Options:
 3. No label until final timestep, then backpropagate credit
 
 This requires more careful design, not just parameter adjustment.
+
+---
+
+## 8. Insights from Hinton's Original Paper
+
+Reference: [The Forward-Forward Algorithm: Some Preliminary Investigations](https://arxiv.org/abs/2212.13345) (Hinton, 2022)
+
+### 8.1 Hinton's Recurrent FF for Video/Temporal Data
+
+Hinton addresses temporal processing in Section 5 of the paper using a **completely different architecture**:
+
+> "The activity vector at each layer is determined by the normalized activity vectors at both the layer above and the layer below at the previous time-step."
+
+**Key differences from our approach:**
+
+| Aspect | Hinton's Recurrent FF | Our Temporal Model |
+|--------|----------------------|-------------------|
+| Information flow | **Bidirectional** (top-down + bottom-up) | Unidirectional (forward only) |
+| Goodness measure | **Agreement** between layers | Sum of squared activities |
+| Processing | 8 iterations on same input | Single pass through 28 rows |
+| Training | **No BPTT** - purely local | BPTT through time |
+| Damping | 0.3 × old + 0.7 × new | α = 0.95 leaky decay |
+
+### 8.2 Agreement-Based Goodness
+
+Hinton's recurrent model uses **interference between top-down and bottom-up signals**:
+
+> "When top-down and bottom-up inputs agree, there will be positive interference resulting in high squared activities and if they disagree the squared activities will be lower."
+
+This is fundamentally different from our sum-of-squared-activities approach:
+- **Our model**: Goodness = ||s||² at final timestep
+- **Hinton's model**: Goodness = agreement between what layer expects (top-down) and what it receives (bottom-up)
+
+### 8.3 Why Hinton's Approach Avoids Vanishing Gradients
+
+1. **No BPTT**: "No gradients are propagated. Learning remains local."
+2. **Top-down connections**: Supervision signal reaches all layers directly
+3. **Multiple iterations**: Information propagates bidirectionally over 8 steps
+4. **Local learning**: Each layer has its own objective function
+
+### 8.4 Critical Insight: We're Violating FF's Core Principle
+
+**Forward-Forward was designed to AVOID backpropagation.** Our temporal model tries to use BPTT, which:
+1. Reintroduces the vanishing gradient problem FF was designed to solve
+2. Loses the hardware-compatibility advantage
+3. Loses the biological plausibility
+
+### 8.5 What Hinton Actually Does for Temporal/Video Data
+
+1. **Initialize**: Single bottom-up pass to set initial hidden states
+2. **Iterate**: Run 8 synchronous iterations with damping (0.3/0.7 mix)
+3. **Bidirectional**: Each layer receives from both above and below
+4. **Local goodness**: Each layer learns to maximize agreement for positive data
+5. **Result**: 1.31% test error on MNIST (vs our ~83% error!)
+
+---
+
+## 9. Revised Recommendation: True Local Learning
+
+Based on Hinton's paper, our gradient-weight-compensation approach is still a **simulation-based workaround** that uses BPTT. A truly principled approach would:
+
+### Option E: Hinton-Style Recurrent FF (Recommended)
+
+1. **Add top-down connections**: Allow higher layers to influence lower layers
+2. **Use agreement-based goodness**: Measure alignment between hierarchical levels
+3. **Multiple iterations**: Process each image for 8+ iterations
+4. **Local layer learning**: Each layer optimizes its own goodness without BPTT
+5. **Damping**: Use 0.3/0.7 mixing to prevent oscillations
+
+### Why This Is Better
+
+- ✓ **No vanishing gradients**: No BPTT, learning is immediate and local
+- ✓ **Matches Hinton's proven approach**: 1.31% error vs our ~83%
+- ✓ **Hardware compatible**: Local learning can be implemented in analog hardware
+- ✓ **Biologically plausible**: Matches cortical feedback connections
+
+### Implementation Considerations for SOEN
+
+The challenge is adapting Hinton's approach to SOEN's temporal scanning paradigm:
+- SOEN processes rows sequentially (not iterations on full image)
+- May need to combine: sequential input + recurrent iterations per timestep
+- Top-down connections may require different hardware architecture
+
+---
+
+## 10. Summary: The Real Problem
+
+**We were trying to fix vanishing gradients in BPTT. But Hinton's FF doesn't use BPTT at all.**
+
+Our gradient-weight-compensation is a valid simulation technique, but it's a workaround for a problem that shouldn't exist if we follow Hinton's actual algorithm.
+
+The path forward is either:
+1. **Accept simulation-based training**: Keep BPTT with gradient compensation (current approach)
+2. **Implement true local learning**: Follow Hinton's recurrent FF with bidirectional connections
+
+Option 1 finds weights for hardware deployment. Option 2 is hardware-compatible learning.
