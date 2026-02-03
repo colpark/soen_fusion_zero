@@ -10,7 +10,7 @@ description: "MNIST with gated SOEN (MultiplierNOCC, 7→28→10)"
 seed: 42
 
 training:
-  batch_size: 256
+  batch_size: 64
   max_epochs: 50
 
   accelerator: "auto"
@@ -21,7 +21,7 @@ training:
 
   optimizer:
     name: "adam"
-    lr: 0.002
+    lr: 0.0005
     kwargs:
       weight_decay: 0.0001
 
@@ -66,7 +66,7 @@ logging:
 callbacks:
   lr_scheduler:
     type: "cosine"
-    max_lr: 2e-3
+    max_lr: 5e-4
     min_lr: 1e-5
     warmup_epochs: 3
     cycle_epochs: 50
