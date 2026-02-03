@@ -56,9 +56,9 @@ model:
   base_model_path: "training/test_models/model_specs/MNIST_SOENSpec_7x112.yaml"
   load_exact_model_state: false
 
-  # Time pooling: Take max over time for classification
+  # Average pooling better captures integrated signal with leaky neurons
   time_pooling:
-    name: "max"
+    name: "mean"
     params: {scale: 1.0}
 
   dt: 100                      # Must match model spec

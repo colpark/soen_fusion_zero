@@ -43,8 +43,10 @@ model:
   base_model_path: "training/test_models/model_specs/MNIST_SOENSpec_7x112_8input.yaml"
   load_exact_model_state: false
 
+  # Average pooling better captures integrated signal with leaky neurons
+  # (gamma_minus causes decay, so averaging accumulates temporal information)
   time_pooling:
-    name: "max"
+    name: "mean"
     params: {scale: 1.0}
 
   dt: 100
