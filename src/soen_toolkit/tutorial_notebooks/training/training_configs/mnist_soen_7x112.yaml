@@ -18,12 +18,12 @@ seed: 42
 # ==============================================================================
 training:
   # --- Basic Settings ---
-  batch_size: 64
+  batch_size: 256              # Larger batch for faster training
   max_epochs: 30
 
   # --- Compute & Hardware Settings ---
   accelerator: "auto"          # Use GPU if available
-  precision: "32-true"
+  precision: "16-mixed"        # Mixed precision for speed
   devices: "auto"
   num_workers: 4               # DataLoader workers
   deterministic: false
@@ -31,7 +31,7 @@ training:
   # --- Optimizer ---
   optimizer:
     name: "adam"
-    lr: 0.001
+    lr: 0.002                  # Higher LR with larger batch
     kwargs:
       weight_decay: 0.0001     # L2 regularization
 
@@ -91,7 +91,7 @@ callbacks:
   # Learning rate scheduler
   lr_scheduler:
     type: "cosine"
-    max_lr: 1e-3
+    max_lr: 2e-3               # Match optimizer LR
     min_lr: 1e-5
     warmup_epochs: 2
     cycle_epochs: 30
