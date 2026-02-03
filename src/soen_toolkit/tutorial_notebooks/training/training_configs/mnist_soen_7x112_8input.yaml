@@ -1,0 +1,90 @@
+# ==============================================================================
+# MNIST SOEN Training Configuration (7x112, 8 Inputs Per Neuron)
+# ==============================================================================
+# Trains a SOEN model on MNIST with hardware-compatible sparse connectivity
+#
+# Architecture: 112D input → 128D SingleDendrite → 10D output
+# Input format: MNIST images reshaped to 7 timesteps × 112 features
+#
+# HARDWARE CONSTRAINT: Each neuron receives at most 8 inputs
+#   - All connections use sparse masks with fixed fan-in of 8
+# ==============================================================================
+
+description: "MNIST with SOEN (7x112 format, 8 inputs per neuron - hardware compatible)"
+seed: 42
+
+training:
+  batch_size: 64
+  max_epochs: 50  # May need more epochs due to sparse connectivity
+
+  accelerator: "auto"
+  precision: "32-true"
+  devices: "auto"
+  num_workers: 4
+  deterministic: false
+
+  optimizer:
+    name: "adam"
+    lr: 0.002  # Slightly higher LR for sparse networks
+    kwargs:
+      weight_decay: 0.0001
+
+  losses:
+    - name: cross_entropy
+      weight: 1.0
+      params: {}
+
+data:
+  data_path: "training/datasets/mnist_seq7x112.hdf5"
+  cache_data: true
+  target_seq_len: 7
+
+model:
+  base_model_path: "training/test_models/model_specs/MNIST_SOENSpec_7x112_8input.yaml"
+  load_exact_model_state: false
+
+  time_pooling:
+    name: "max"
+    params: {scale: 1.0}
+
+  dt: 100
+
+logging:
+  project_dir: "src/soen_toolkit/tutorial_notebooks/training/temp"
+  project_name: "MNIST_SOEN_7x112_8input"
+  experiment_name: "MNIST_SingleDendrite_128_8input"
+  group_name: "MNIST"
+
+  metrics:
+    - "accuracy"
+    - "perplexity"
+
+  log_freq: 100
+  log_batch_metrics: true
+  log_level: "WARNING"
+  log_gradients: false
+
+  track_layer_params: true
+  track_connections: true
+
+callbacks:
+  lr_scheduler:
+    type: "cosine"
+    max_lr: 2e-3
+    min_lr: 1e-5
+    warmup_epochs: 3
+    cycle_epochs: 50
+    period_decay: 1.0
+    amplitude_decay: 0.95
+
+  early_stopping:
+    monitor: "val_accuracy"
+    patience: 15
+    mode: "max"
+    min_delta: 0.001
+
+  model_checkpoint:
+    monitor: "val_accuracy"
+    mode: "max"
+    save_top_k: 3
+    save_last: true
