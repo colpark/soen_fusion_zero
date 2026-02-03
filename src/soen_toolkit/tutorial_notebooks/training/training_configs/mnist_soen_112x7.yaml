@@ -1,0 +1,88 @@
+# ==============================================================================
+# MNIST SOEN Training Configuration (112 timesteps × 7 features)
+# ==============================================================================
+# Architecture: 7D input → 28D SingleDendrite → 10D output
+# Input format: MNIST reshaped to 112 timesteps × 7 features
+#
+# HARDWARE COMPATIBLE: Each hidden neuron receives only 7 inputs (< 8 max)
+# ==============================================================================
+
+description: "MNIST with SOEN (112x7 format, 7 inputs per neuron - hardware compatible)"
+seed: 42
+
+training:
+  batch_size: 256
+  max_epochs: 30
+
+  accelerator: "auto"
+  precision: "16-mixed"
+  devices: "auto"
+  num_workers: 4
+  deterministic: false
+
+  optimizer:
+    name: "adam"
+    lr: 0.002
+    kwargs:
+      weight_decay: 0.0001
+
+  losses:
+    - name: cross_entropy
+      weight: 1.0
+      params: {}
+
+data:
+  data_path: "training/datasets/mnist_seq112x7.hdf5"
+  cache_data: true
+  target_seq_len: 112          # 112 timesteps
+
+model:
+  base_model_path: "training/test_models/model_specs/MNIST_SOENSpec_112x7.yaml"
+  load_exact_model_state: false
+
+  # Mean pooling to integrate over 112 timesteps
+  time_pooling:
+    name: "mean"
+    params: {scale: 1.0}
+
+  dt: 100
+
+logging:
+  project_dir: "src/soen_toolkit/tutorial_notebooks/training/temp"
+  project_name: "MNIST_SOEN_112x7"
+  experiment_name: "MNIST_SingleDendrite_28_112x7"
+  group_name: "MNIST"
+
+  metrics:
+    - "accuracy"
+    - "perplexity"
+
+  log_freq: 100
+  log_batch_metrics: true
+  log_level: "WARNING"
+  log_gradients: false
+
+  track_layer_params: true
+  track_connections: true
+
+callbacks:
+  lr_scheduler:
+    type: "cosine"
+    max_lr: 2e-3
+    min_lr: 1e-5
+    warmup_epochs: 2
+    cycle_epochs: 30
+    period_decay: 1.0
+    amplitude_decay: 0.95
+
+  early_stopping:
+    monitor: "val_accuracy"
+    patience: 10
+    mode: "max"
+    min_delta: 0.001
+
+  model_checkpoint:
+    monitor: "val_accuracy"
+    mode: "max"
+    save_top_k: 3
+    save_last: true

@@ -1,0 +1,250 @@
+# ==============================================================================
+# MNIST SOEN Model Specification (112 timesteps × 7 features)
+# ==============================================================================
+# Architecture: 7D → 28D (SingleDendrite) → 10D (Output)
+#
+# MNIST is reshaped from 28×28 to 112×7:
+#   - 112 timesteps
+#   - 7 features per timestep
+#
+# HARDWARE COMPATIBLE: Each neuron receives only 7 inputs (< 8 max)
+# ==============================================================================
+
+simulation:
+  dt: 100.0
+  dt_learnable: false
+  input_type: state
+  track_power: false
+  track_phi: true
+  track_g: false
+  track_s: false
+
+layers:
+  # Layer 0: Input Layer (7 features per timestep)
+  - layer_id: 0
+    layer_type: Input
+    params:
+      dim: 7                   # 7 features per timestep
+    description: "MNIST input (7 features per timestep)"
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # Layer 1: Hidden SOEN Layer (28 neurons)
+  # Each neuron receives 7 inputs from input layer (< 8 max!)
+  - layer_id: 1
+    layer_type: SingleDendrite
+    params:
+      dim: 28                  # 28 hidden neurons
+      solver: FE
+      source_func: Heaviside_fit_state_dep
+      phi_offset:
+        distribution: constant
+        params:
+          value: 0.02
+      bias_current:
+        distribution: uniform
+        params:
+          min: 1.8
+          max: 2.1
+      gamma_plus:
+        distribution: constant
+        params:
+          value: 0.001
+      gamma_minus:
+        distribution: constant
+        params:
+          value: 0.0001
+      learnable_params:
+        phi_offset: false
+        bias_current: false
+        gamma_plus: false
+        gamma_minus: false
+    description: "Hidden SOEN layer (28 neurons, 7 inputs each - hardware compatible)"
+    noise:
+      phi: 0.01
+      g: 0.0
+      s: 0.005
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+      extras_std:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+
+  # Layer 2: Output Layer (10 classes)
+  - layer_id: 2
+    layer_type: Input
+    params:
+      dim: 10
+    description: "Classification output (10 classes)"
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+connections:
+  # J_0_to_1: Input → Hidden (7 → 28, DENSE)
+  # Each hidden neuron receives ALL 7 inputs (< 8 max!)
+  - from_layer: 0
+    to_layer: 1
+    connection_type: dense
+    params:
+      min: -0.3
+      max: 0.3
+      init: uniform
+      allow_self_connections: true
+      constraints:
+        min: -1.0
+        max: 1.0
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # J_1_to_1: Hidden → Hidden (28 → 28, recurrent)
+  # Note: This has 28 inputs per neuron - may need to make sparse if > 8 required
+  - from_layer: 1
+    to_layer: 1
+    connection_type: dense
+    params:
+      mean: 0.0
+      std: 0.1
+      init: normal
+      allow_self_connections: false
+      constraints:
+        min: -0.5
+        max: 0.5
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # J_1_to_2: Hidden → Output (28 → 10)
+  # Note: Each output neuron receives 28 inputs - may need sparse if > 8 required
+  - from_layer: 1
+    to_layer: 2
+    connection_type: dense
+    params:
+      mean: 0.0
+      std: 0.2
+      init: normal
+      allow_self_connections: true
+      constraints:
+        min: -1.0
+        max: 1.0
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+seed: 42
