@@ -1,0 +1,260 @@
+# ==============================================================================
+# MNIST SOEN Model - Gated Architecture with MultiplierNOCC (112×7 input)
+# ==============================================================================
+# Architecture: 7 → 28 → 10
+#
+# Uses MultiplierNOCC layer for gating:
+#   - Dual SQUID states (s1, s2) for selective memory
+#   - Aggregated output (m) acts as gated signal
+#   - Can learn to hold important patterns and suppress noise
+#
+# Hardware compatible: 7 inputs per hidden neuron (< 8 max)
+# ==============================================================================
+
+simulation:
+  dt: 100.0
+  dt_learnable: false
+  input_type: state
+  track_power: false
+  track_phi: true
+  track_g: false
+  track_s: false
+
+layers:
+  # Layer 0: Input (7 features per timestep)
+  - layer_id: 0
+    layer_type: Input
+    params:
+      dim: 7
+    description: "Input layer (7 features per timestep)"
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # Layer 1: Hidden layer with GATING (MultiplierNOCC)
+  # 28 neurons, each receives 7 inputs (< 8 max)
+  # MultiplierNOCC has dual SQUID states for selective memory gating
+  - layer_id: 1
+    layer_type: MultiplierNOCC
+    params:
+      dim: 28
+      solver: FE
+      source_func: Heaviside_fit_state_dep
+      # MultiplierNOCC specific parameters
+      phi_y:
+        distribution: constant
+        params:
+          value: 0.1
+      bias_current:
+        distribution: uniform
+        params:
+          min: 2.0
+          max: 2.2
+      alpha:
+        distribution: constant
+        params:
+          value: 1.64053
+      beta:
+        distribution: constant
+        params:
+          value: 303.85
+      beta_out:
+        distribution: constant
+        params:
+          value: 91.156
+      learnable_params:
+        phi_y: true
+        bias_current: false
+        alpha: false
+        beta: false
+        beta_out: false
+    description: "Hidden layer with MultiplierNOCC gating (28 neurons)"
+    noise:
+      phi: 0.01
+      g: 0.0
+      s: 0.005
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras:
+        phi_y: 0.0
+        alpha: 0.0
+        beta: 0.0
+        beta_out: 0.0
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean:
+        phi_y: 0.0
+        alpha: 0.0
+        beta: 0.0
+        beta_out: 0.0
+      extras_std:
+        phi_y: 0.0
+        alpha: 0.0
+        beta: 0.0
+        beta_out: 0.0
+
+  # Layer 2: Output layer (10 classes)
+  - layer_id: 2
+    layer_type: Input
+    params:
+      dim: 10
+    description: "Output: Classification (10 classes)"
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+connections:
+  # J_0_to_1: Input → Hidden (7 → 28, dense)
+  # Each of 28 neurons receives all 7 inputs
+  - from_layer: 0
+    to_layer: 1
+    connection_type: dense
+    params:
+      min: -0.3
+      max: 0.3
+      init: uniform
+      allow_self_connections: true
+      constraints:
+        min: -1.0
+        max: 1.0
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # J_1_to_1: Hidden → Hidden (28 → 28, recurrent)
+  # Recurrent connections for temporal memory
+  - from_layer: 1
+    to_layer: 1
+    connection_type: dense
+    params:
+      mean: 0.0
+      std: 0.1
+      init: normal
+      allow_self_connections: false
+      constraints:
+        min: -0.5
+        max: 0.5
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # J_1_to_2: Hidden → Output (28 → 10, dense)
+  - from_layer: 1
+    to_layer: 2
+    connection_type: dense
+    params:
+      mean: 0.0
+      std: 0.2
+      init: normal
+      allow_self_connections: true
+      constraints:
+        min: -1.0
+        max: 1.0
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+seed: 42
