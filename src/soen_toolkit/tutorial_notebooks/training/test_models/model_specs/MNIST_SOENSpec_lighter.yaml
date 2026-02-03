@@ -1,0 +1,288 @@
+# ==============================================================================
+# MNIST SOEN Model Specification
+# ==============================================================================
+# Architecture: 28D → 128D (SingleDendrite) → 10D (Output)
+#
+# MNIST is treated as a 28-timestep sequence where each timestep is a row of
+# 28 pixels. This leverages SOEN's natural temporal processing capabilities.
+#
+# Key insight: Output connection (J_1_to_2) is LEARNABLE to enable gradient flow
+# and effective training. See tutorial 02 for why this matters.
+# ==============================================================================
+#
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║                        NOISE CONFIGURATION: ENABLED                        ║
+# ╠═══════════════════════════════════════════════════════════════════════════╣
+# ║  This model runs with NOISE INJECTION (documented defaults).              ║
+# ║                                                                           ║
+# ║  Default noise parameters (applied to SOEN layers):                       ║
+# ║    • phi (flux noise)         = 0.01  (noise on input flux)               ║
+# ║    • s (state noise)          = 0.005 (noise on state)                    ║
+# ║    • relative: false          (absolute scaling)                          ║
+# ║                                                                           ║
+# ║  To DISABLE noise (ideal conditions), set all values to 0.0 or use        ║
+# ║  the NOISE_ENABLED toggle in the tutorial notebooks.                      ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+#
+
+simulation:
+  dt: 100.0                    # Timestep for integration
+  dt_learnable: false
+  input_type: state            # Input directly sets layer states
+  track_power: false
+  track_phi: true
+  track_g: false
+  track_s: false
+
+# ==============================================================================
+# Layer Definitions
+# ==============================================================================
+layers:
+  # ---------------------------------------------------------------------------
+  # Layer 0: Input Layer (receives one row of MNIST at a time)
+  # ---------------------------------------------------------------------------
+  - layer_id: 0
+    layer_type: Input
+    params:
+      dim: 28                  # 28 pixels per row
+    description: "MNIST row input (28 pixels per timestep)"
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # ---------------------------------------------------------------------------
+  # Layer 1: Hidden SOEN Layer (SingleDendrite with recurrence)
+  # ---------------------------------------------------------------------------
+  - layer_id: 1
+    layer_type: SingleDendrite
+    params:
+      dim: 28                 # Hidden dimension
+      solver: FE               # Forward Euler integration
+      source_func: Heaviside_fit_state_dep
+
+      # Circuit parameters
+      phi_offset:
+        distribution: constant
+        params:
+          value: 0.02
+      bias_current:
+        distribution: uniform
+        params:
+          min: 1.8
+          max: 2.1
+      gamma_plus:
+        distribution: constant
+        params:
+          value: 0.001         # Integration rate
+      gamma_minus:
+        distribution: constant
+        params:
+          value: 0.0001        # Leak rate
+
+      # Learnable parameters (can be enabled for fine-tuning)
+      learnable_params:
+        phi_offset: false
+        bias_current: false
+        gamma_plus: false
+        gamma_minus: false
+
+    description: "Hidden SOEN layer with temporal integration"
+    noise:
+      phi: 0.01            # Noise on input flux
+      g: 0.0
+      s: 0.005             # Noise on state
+      bias_current: 0.0
+      j: 0.0
+      relative: false      # Absolute scaling
+      extras:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+      extras_std:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+
+  # ---------------------------------------------------------------------------
+  # Layer 2: Output Layer (10 classes for digits 0-9)
+  # ---------------------------------------------------------------------------
+  - layer_id: 2
+    layer_type: Input          # Linear passthrough (NOT DendriteReadout)
+    params:
+      dim: 10                  # 10 digit classes
+    description: "Classification output (10 classes)"
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+# ==============================================================================
+# Connection Definitions
+# ==============================================================================
+connections:
+  # ---------------------------------------------------------------------------
+  # J_0_to_1: Input → Hidden (28 → 128)
+  # ---------------------------------------------------------------------------
+  - from_layer: 0
+    to_layer: 1
+    connection_type: all_to_all
+    params:
+      min: -0.1
+      max: 0.1
+      init: uniform
+      allow_self_connections: true
+      constraints:
+        min: -0.5
+        max: 0.5
+    learnable: true            # Input weights are learnable
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # ---------------------------------------------------------------------------
+  # J_1_to_1: Hidden → Hidden (recurrent, 128 → 128)
+  # ---------------------------------------------------------------------------
+  - from_layer: 1
+    to_layer: 1
+    connection_type: all_to_all
+    params:
+      mean: 0.0
+      std: 0.1
+      init: normal
+      allow_self_connections: false  # No self-connections in recurrence
+      constraints:
+        min: -0.5
+        max: 0.5
+    learnable: true            # Recurrent weights are learnable
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # ---------------------------------------------------------------------------
+  # J_1_to_2: Hidden → Output (128 → 10)
+  # ---------------------------------------------------------------------------
+  # IMPORTANT: This connection is LEARNABLE (not frozen!)
+  # This is the key insight from tutorial 02 - freezing this connection
+  # blocks effective gradient flow for Input/Linear output layers.
+  # ---------------------------------------------------------------------------
+  - from_layer: 1
+    to_layer: 2
+    connection_type: all_to_all
+    params:
+      mean: 0.0
+      std: 0.1
+      init: normal
+      allow_self_connections: true
+      constraints:
+        min: -1.0
+        max: 1.0
+    learnable: true            # CRITICAL: Output connection must be learnable!
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+seed: 42
