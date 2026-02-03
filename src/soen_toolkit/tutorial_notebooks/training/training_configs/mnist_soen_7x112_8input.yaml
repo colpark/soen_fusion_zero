@@ -14,11 +14,11 @@ description: "MNIST with SOEN (7x112 format, 8 inputs per neuron - hardware comp
 seed: 42
 
 training:
-  batch_size: 64
-  max_epochs: 50  # May need more epochs due to sparse connectivity
+  batch_size: 256           # Larger batch = better GPU utilization
+  max_epochs: 30            # Fewer epochs with larger batch
 
   accelerator: "auto"
-  precision: "32-true"
+  precision: "16-mixed"     # Mixed precision for 2-3x speedup on modern GPUs
   devices: "auto"
   num_workers: 4
   deterministic: false
@@ -72,16 +72,16 @@ logging:
 callbacks:
   lr_scheduler:
     type: "cosine"
-    max_lr: 2e-3
+    max_lr: 4e-3            # Higher LR with larger batch (linear scaling)
     min_lr: 1e-5
-    warmup_epochs: 3
-    cycle_epochs: 50
+    warmup_epochs: 2
+    cycle_epochs: 30
     period_decay: 1.0
     amplitude_decay: 0.95
 
   early_stopping:
     monitor: "val_accuracy"
-    patience: 15
+    patience: 8             # Faster early stopping
     mode: "max"
     min_delta: 0.001
 
