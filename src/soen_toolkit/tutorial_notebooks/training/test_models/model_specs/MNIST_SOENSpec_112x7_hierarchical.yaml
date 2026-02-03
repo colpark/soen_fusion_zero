@@ -1,0 +1,314 @@
+# ==============================================================================
+# MNIST SOEN Model - Hierarchical Architecture (112×7 input)
+# ==============================================================================
+# Architecture: 7 → 8 → 8 → 10
+#
+# Hierarchical processing to build up pattern representations:
+#   - Layer 1: Local feature extraction (7 inputs → 8 neurons)
+#   - Layer 2: Feature combination (8 inputs → 8 neurons)  
+#   - Layer 3: Classification (8 inputs → 10 outputs)
+#
+# HARDWARE COMPATIBLE: All neurons receive ≤ 8 inputs
+# ==============================================================================
+
+simulation:
+  dt: 100.0
+  dt_learnable: false
+  input_type: state
+  track_power: false
+  track_phi: true
+  track_g: false
+  track_s: false
+
+layers:
+  # Layer 0: Input (7 features per timestep)
+  - layer_id: 0
+    layer_type: Input
+    params:
+      dim: 7
+    description: "Input layer (7 features per timestep)"
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # Layer 1: First hidden layer - local feature extraction
+  # 8 neurons, each receives 7 inputs (< 8 max)
+  - layer_id: 1
+    layer_type: SingleDendrite
+    params:
+      dim: 8
+      solver: FE
+      source_func: Heaviside_fit_state_dep
+      phi_offset:
+        distribution: constant
+        params:
+          value: 0.02
+      bias_current:
+        distribution: uniform
+        params:
+          min: 1.8
+          max: 2.1
+      gamma_plus:
+        distribution: constant
+        params:
+          value: 0.001
+      gamma_minus:
+        distribution: constant
+        params:
+          value: 0.0001
+      learnable_params:
+        phi_offset: false
+        bias_current: false
+        gamma_plus: false
+        gamma_minus: false
+    description: "Hidden 1: Local features (8 neurons, 7 inputs each)"
+    noise:
+      phi: 0.01
+      g: 0.0
+      s: 0.005
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+      extras_std:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+
+  # Layer 2: Second hidden layer - feature combination
+  # 8 neurons, each receives 8 inputs (= 8 max)
+  - layer_id: 2
+    layer_type: SingleDendrite
+    params:
+      dim: 8
+      solver: FE
+      source_func: Heaviside_fit_state_dep
+      phi_offset:
+        distribution: constant
+        params:
+          value: 0.02
+      bias_current:
+        distribution: uniform
+        params:
+          min: 1.8
+          max: 2.1
+      gamma_plus:
+        distribution: constant
+        params:
+          value: 0.001
+      gamma_minus:
+        distribution: constant
+        params:
+          value: 0.0001
+      learnable_params:
+        phi_offset: false
+        bias_current: false
+        gamma_plus: false
+        gamma_minus: false
+    description: "Hidden 2: Feature combination (8 neurons, 8 inputs each)"
+    noise:
+      phi: 0.01
+      g: 0.0
+      s: 0.005
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+      extras_std:
+        phi_offset: 0.0
+        gamma_plus: 0.0
+        gamma_minus: 0.0
+
+  # Layer 3: Output layer (10 classes)
+  # Each receives 8 inputs (= 8 max)
+  - layer_id: 3
+    layer_type: Input
+    params:
+      dim: 10
+    description: "Output: Classification (10 neurons, 8 inputs each)"
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+connections:
+  # J_0_to_1: Input → Hidden1 (7 → 8, dense)
+  # Each of 8 neurons receives all 7 inputs
+  - from_layer: 0
+    to_layer: 1
+    connection_type: dense
+    params:
+      min: -0.3
+      max: 0.3
+      init: uniform
+      allow_self_connections: true
+      constraints:
+        min: -1.0
+        max: 1.0
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # J_1_to_2: Hidden1 → Hidden2 (8 → 8, dense)
+  # Each of 8 neurons receives all 8 inputs
+  - from_layer: 1
+    to_layer: 2
+    connection_type: dense
+    params:
+      min: -0.3
+      max: 0.3
+      init: uniform
+      allow_self_connections: true
+      constraints:
+        min: -1.0
+        max: 1.0
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+  # J_2_to_3: Hidden2 → Output (8 → 10, dense)
+  # Each of 10 neurons receives all 8 inputs
+  - from_layer: 2
+    to_layer: 3
+    connection_type: dense
+    params:
+      mean: 0.0
+      std: 0.2
+      init: normal
+      allow_self_connections: true
+      constraints:
+        min: -1.0
+        max: 1.0
+    learnable: true
+    noise:
+      phi: 0.0
+      g: 0.0
+      s: 0.0
+      bias_current: 0.0
+      j: 0.0
+      relative: false
+      extras: {}
+    perturb:
+      phi_mean: 0.0
+      phi_std: 0.0
+      g_mean: 0.0
+      g_std: 0.0
+      s_mean: 0.0
+      s_std: 0.0
+      bias_current_mean: 0.0
+      bias_current_std: 0.0
+      j_mean: 0.0
+      j_std: 0.0
+      extras_mean: {}
+      extras_std: {}
+
+seed: 42

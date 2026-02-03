@@ -1,0 +1,85 @@
+# ==============================================================================
+# MNIST SOEN Training - Hierarchical Architecture (112×7)
+# ==============================================================================
+# Architecture: 7 → 8 → 8 → 10
+# All neurons receive ≤ 8 inputs (hardware compatible)
+# ==============================================================================
+
+description: "MNIST with hierarchical SOEN (7→8→8→10)"
+seed: 42
+
+training:
+  batch_size: 256
+  max_epochs: 50
+
+  accelerator: "auto"
+  precision: "16-mixed"
+  devices: "auto"
+  num_workers: 4
+  deterministic: false
+
+  optimizer:
+    name: "adam"
+    lr: 0.003
+    kwargs:
+      weight_decay: 0.0001
+
+  losses:
+    - name: cross_entropy
+      weight: 1.0
+      params: {}
+
+data:
+  data_path: "training/datasets/mnist_seq112x7.hdf5"
+  cache_data: true
+  target_seq_len: 112
+
+model:
+  base_model_path: "training/test_models/model_specs/MNIST_SOENSpec_112x7_hierarchical.yaml"
+  load_exact_model_state: false
+
+  time_pooling:
+    name: "mean"
+    params: {scale: 1.0}
+
+  dt: 100
+
+logging:
+  project_dir: "src/soen_toolkit/tutorial_notebooks/training/temp"
+  project_name: "MNIST_SOEN_112x7_hierarchical"
+  experiment_name: "MNIST_Hierarchical_7_8_8_10"
+  group_name: "MNIST"
+
+  metrics:
+    - "accuracy"
+    - "perplexity"
+
+  log_freq: 100
+  log_batch_metrics: true
+  log_level: "WARNING"
+  log_gradients: false
+
+  track_layer_params: true
+  track_connections: true
+
+callbacks:
+  lr_scheduler:
+    type: "cosine"
+    max_lr: 3e-3
+    min_lr: 1e-5
+    warmup_epochs: 3
+    cycle_epochs: 50
+    period_decay: 1.0
+    amplitude_decay: 0.95
+
+  early_stopping:
+    monitor: "val_accuracy"
+    patience: 15
+    mode: "max"
+    min_delta: 0.001
+
+  model_checkpoint:
+    monitor: "val_accuracy"
+    mode: "max"
+    save_top_k: 3
+    save_last: true
