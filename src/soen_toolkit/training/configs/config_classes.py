@@ -370,8 +370,21 @@ class DataConfig:
     # Optional explicit CSV split paths
     csv_data_paths: dict[str, str | Path] | None = None  # keys: train, val, test
 
+    # DEPRECATED: Use cache_data instead. Kept for backward compatibility.
+    cache: bool | None = None
+
     def __post_init__(self) -> None:
         """Convert path strings to Path objects and set defaults."""
+        # Handle deprecated 'cache' field (alias for cache_data)
+        if self.cache is not None:
+            warnings.warn(
+                "DataConfig field 'cache' is deprecated, use 'cache_data' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.cache_data = self.cache
+            self.cache = None  # Clear the deprecated field
+
         if isinstance(self.data_path, str):
             self.data_path = Path(self.data_path)
 
