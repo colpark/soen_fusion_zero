@@ -8,8 +8,16 @@ root/
   meta.csv          – columns: shot, split, t_disruption (ms), ...
   {shot}.h5         – HDF5 with key 'LFS' → (20, 8, T) float at 1 MHz
 
-Preprocessing pipeline (applied in __getitem__)
-------------------------------------------------
+Optionally, a *decimated_root* directory can hold pre-processed files:
+  decimated_root/
+    meta.csv        – same as root
+    {shot}.h5       – offset-removed & decimated: (20, 8, T/data_step)
+
+When decimated_root exists the dataset reads from it directly, skipping
+offset removal and decimation in __getitem__ for much faster training.
+
+Preprocessing pipeline (applied in __getitem__ when reading raw data)
+---------------------------------------------------------------------
 1. DC offset removal   – mean of first *baseline_length* samples per channel
 2. Temporal decimation – keep every *data_step*-th sample (1 MHz → 100 kHz at step=10)
 3. Z-score normalisation – per-channel (20×8) mean/std computed from training shots
@@ -97,23 +105,32 @@ class ECEiTCNDataset(Dataset):
     def __init__(
         self,
         root:             str,
-        Twarn:            int   = 300_000,    # 300 ms in samples
-        baseline_length:  int   = 50_000,     # 50 ms
+        Twarn:            int   = 300_000,    # 300 ms in samples (1 MHz)
+        baseline_length:  int   = 50_000,     # 50 ms  (1 MHz)
         data_step:        int   = 10,         # → 100 kHz
-        nsub:             int   = 500_000,    # 500 ms window
+        nsub:             int   = 500_000,    # 500 ms window (1 MHz)
         stride:           int | None = None,  # default = nsub (no overlap)
         normalize:        bool  = True,
         label_balance:    str   = 'const',    # 'const' | 'none'
-        norm_stats_path:  str | None = 'norm_stats.npz',  # path to cache
+        norm_stats_path:  str | None = 'norm_stats.npz',
         norm_train_split: str   = 'train',
         norm_max_shots:   int   = 100,
+        decimated_root:   str | None = None,
     ):
         """
-        Args (new, related to normalisation caching):
+        Args:
+            root:             Directory with meta.csv and raw {shot}.h5 files.
+            decimated_root:   Directory with pre-decimated h5 files (offset-
+                              removed & decimated).  If it exists the dataset
+                              reads from here, skipping offset removal and
+                              decimation for faster I/O.
             norm_stats_path:  Where to save / load per-channel mean & std.
                               Set to None to skip automatic loading/computing.
             norm_train_split: Which split to use when computing stats.
             norm_max_shots:   Max number of shots sampled for stat estimation.
+        All time parameters (Twarn, baseline_length, nsub, stride) are
+        specified in **raw 1 MHz samples** regardless of whether decimated
+        data is used — the class converts internally.
         """
         self.root             = Path(root)
         self.Twarn            = Twarn
@@ -124,19 +141,49 @@ class ECEiTCNDataset(Dataset):
         self.normalize        = normalize
         self.label_balance    = label_balance
 
+        # ── check for pre-decimated data ──────────────────────────────
+        self._use_decimated = False
+        self._decimated_root: Optional[Path] = None
+        if decimated_root is not None:
+            p = Path(decimated_root)
+            if p.exists() and (p / 'meta.csv').exists():
+                self._use_decimated = True
+                self._decimated_root = p
+                print(f'[ECEiTCNDataset] Using pre-decimated data '
+                      f'from {p}')
+
         # ── metadata ──────────────────────────────────────────────────
         self.meta = pd.read_csv(self.root / 'meta.csv')
         self.shots   = self.meta['shot'].values.astype(int)
         self.splits  = self.meta['split'].values.astype(str)
-        # t_disruption is in ms → samples at 1 MHz
-        self.t_dis   = (self.meta['t_disruption'].values * 1000).astype(int)
 
-        # index where label flips 0 → 1
-        self.disrupt_idx = self.t_dis - self.Twarn
+        # ── index math ────────────────────────────────────────────────
+        # All internal indices (_data_*) are in "data-file sample space":
+        #   raw mode      → 1 MHz   (indices as-is)
+        #   decimated mode → 100 kHz (indices / data_step)
+        # _step_in_getitem is the decimation left to do at read time.
+        if self._use_decimated:
+            q = self.data_step
+            self.t_dis       = (self.meta['t_disruption'].values * 1000 / q).astype(int)
+            self.disrupt_idx = self.t_dis - self.Twarn // q
+            self.start_idx   = np.full(len(self.shots), self.baseline_length // q)
+            self.stop_idx    = self.t_dis.copy()
+            self._data_nsub    = self.nsub   // q
+            self._data_stride  = self.stride // q
+            self._step_in_getitem = 1        # already decimated
+            self._data_root    = self._decimated_root
+        else:
+            self.t_dis       = (self.meta['t_disruption'].values * 1000).astype(int)
+            self.disrupt_idx = self.t_dis - self.Twarn
+            self.start_idx   = np.full(len(self.shots), self.baseline_length)
+            self.stop_idx    = self.t_dis.copy()
+            self._data_nsub    = self.nsub
+            self._data_stride  = self.stride
+            self._step_in_getitem = self.data_step
+            self._data_root    = self.root
 
-        # usable window: [baseline_length, t_dis)
-        self.start_idx = np.full(len(self.shots), self.baseline_length)
-        self.stop_idx  = self.t_dis.copy()
+        # Output temporal length (always the same regardless of mode)
+        self._T_sub = self.nsub // self.data_step
 
         # normalisation – auto load / compute / save
         self.norm_mean: Optional[np.ndarray] = None   # (20, 8)
@@ -160,35 +207,37 @@ class ECEiTCNDataset(Dataset):
     # ── subsequence tiling ────────────────────────────────────────────
 
     def _build_subsequences(self):
-        """Tile each shot into fixed-length windows of *nsub* samples."""
+        """Tile each shot into fixed-length windows (in data-file space)."""
         shot_idx, starts, stops, d_local = [], [], [], []
+        nsub   = self._data_nsub
+        stride = self._data_stride
 
         for s in range(len(self.shots)):
             a, b = int(self.start_idx[s]), int(self.stop_idx[s])
-            if b - a < self.nsub:
+            if b - a < nsub:
                 continue                          # shot too short
 
             d = int(self.disrupt_idx[s])          # absolute disrupt index
 
             pos = a
-            while pos + self.nsub <= b:
+            while pos + nsub <= b:
                 shot_idx.append(s)
                 starts.append(pos)
-                stops.append(pos + self.nsub)
+                stops.append(pos + nsub)
 
                 # local disrupt offset inside this window
                 if d <= pos:
                     d_local.append(0)             # fully disruptive
-                elif d >= pos + self.nsub:
+                elif d >= pos + nsub:
                     d_local.append(-1)            # fully clear
                 else:
                     d_local.append(d - pos)       # transition inside
 
-                pos += self.stride
+                pos += stride
 
             # snap last window to the end of the shot
-            last_start = b - self.nsub
-            if last_start > (pos - self.stride):
+            last_start = b - nsub
+            if last_start > (pos - stride):
                 shot_idx.append(s)
                 starts.append(last_start)
                 stops.append(b)
@@ -208,7 +257,8 @@ class ECEiTCNDataset(Dataset):
     # ── class weights ─────────────────────────────────────────────────
 
     def _compute_class_weights(self):
-        T = self.nsub // self.data_step
+        T = self._T_sub
+        step = self._step_in_getitem
         total_pos, total_neg = 0, 0
         for dl in self.seq_disrupt_local:
             if dl < 0:
@@ -216,7 +266,7 @@ class ECEiTCNDataset(Dataset):
             elif dl == 0:
                 total_pos += T
             else:
-                d = dl // self.data_step
+                d = dl // step
                 total_neg += d
                 total_pos += T - d
         total = total_pos + total_neg
@@ -231,7 +281,10 @@ class ECEiTCNDataset(Dataset):
 
     def compute_norm_stats(self, split: str = 'train',
                            max_shots: int = 60) -> Tuple[np.ndarray, np.ndarray]:
-        """Compute per-channel mean/std from *split* shots (online Welford)."""
+        """Compute per-channel mean/std from *split* shots (online Welford).
+
+        Works with both raw and pre-decimated data transparently.
+        """
         mask    = self.splits == split
         indices = np.where(mask)[0]
         if len(indices) > max_shots:
@@ -243,12 +296,16 @@ class ECEiTCNDataset(Dataset):
 
         for s in tqdm(indices, desc=f'Norm stats ({split})'):
             shot = self.shots[s]
-            with h5py.File(self.root / f'{shot}.h5', 'r') as f:
-                raw = f['LFS'][..., self.start_idx[s]:self.stop_idx[s]]
-                baseline = f['LFS'][..., :self.baseline_length]
+            with h5py.File(self._data_root / f'{shot}.h5', 'r') as f:
+                chunk = f['LFS'][..., self.start_idx[s]:self.stop_idx[s]]
+                if not self._use_decimated:
+                    baseline = f['LFS'][..., :self.baseline_length]
 
-            offset = np.mean(baseline, axis=-1, keepdims=True)
-            data = (raw - offset).astype(np.float64)
+            if self._use_decimated:
+                data = chunk.astype(np.float64)
+            else:
+                offset = np.mean(baseline, axis=-1, keepdims=True)
+                data = (chunk - offset).astype(np.float64)
 
             T = data.shape[-1]
             running_sum    += data.sum(axis=-1)
@@ -290,9 +347,10 @@ class ECEiTCNDataset(Dataset):
                         'n_clear': len(idx) - n_dis}
             print(f"  {sp:>5s}: {len(idx):5d} subseqs  "
                   f"({n_dis} disruptive, {len(idx)-n_dis} clear)")
-        T_sub = self.nsub // self.data_step
-        print(f"  Subseq length after decimation: {T_sub:,} samples "
-              f"({self.nsub/self.FS*1e3:.0f} ms raw, step={self.data_step})")
+        src = 'decimated' if self._use_decimated else 'raw'
+        print(f"  Subseq length: {self._T_sub:,} samples "
+              f"({self.nsub/self.FS*1e3:.0f} ms, step={self.data_step}, "
+              f"source={src})")
         print(f"  pos_weight={self.pos_weight:.3f}  neg_weight={self.neg_weight:.3f}")
         return info
 
@@ -305,17 +363,19 @@ class ECEiTCNDataset(Dataset):
         s    = int(self.seq_shot_idx[index])
         shot = self.shots[s]
 
-        with h5py.File(self.root / f'{shot}.h5', 'r') as f:
+        with h5py.File(self._data_root / f'{shot}.h5', 'r') as f:
             X = f['LFS'][..., self.seq_start[index]:self.seq_stop[index]].astype(np.float32)
-            baseline = f['LFS'][..., :self.baseline_length].astype(np.float32)
+            if not self._use_decimated:
+                baseline = f['LFS'][..., :self.baseline_length].astype(np.float32)
 
-        # 1. offset removal
-        offset = np.mean(baseline, axis=-1, keepdims=True)
-        X -= offset
+        # 1. offset removal  (skip if pre-decimated)
+        if not self._use_decimated:
+            offset = np.mean(baseline, axis=-1, keepdims=True)
+            X -= offset
 
-        # 2. temporal decimation
-        if self.data_step > 1:
-            X = X[..., ::self.data_step]
+        # 2. temporal decimation  (skip if pre-decimated)
+        if self._step_in_getitem > 1:
+            X = X[..., ::self._step_in_getitem]
 
         # 3. normalisation
         if self.normalize and self.norm_mean is not None:
@@ -328,7 +388,7 @@ class ECEiTCNDataset(Dataset):
 
         dl = int(self.seq_disrupt_local[index])
         if dl >= 0:
-            d = min(dl // self.data_step, T)
+            d = min(dl // self._step_in_getitem, T)
             target[d:] = 1.0
             weight[d:] = self.pos_weight
 
