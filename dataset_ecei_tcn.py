@@ -256,17 +256,29 @@ class ECEiTCNDataset(Dataset):
 
     # ── class weights ─────────────────────────────────────────────────
 
-    def _compute_class_weights(self):
+    def _compute_class_weights(self, indices: np.ndarray | None = None):
+        """Compute pos_weight / neg_weight from per-timestep label counts.
+
+        Parameters
+        ----------
+        indices : array of subsequence indices to consider.
+                  If None, uses all subsequences.
+                  Pass the *effective* training indices (e.g. after
+                  undersampling / stratified rebalancing) to get weights
+                  consistent with what the model actually sees.
+        """
         T = self._T_sub
         step = self._step_in_getitem
         total_pos, total_neg = 0, 0
-        for dl in self.seq_disrupt_local:
+
+        dls = self.seq_disrupt_local if indices is None else self.seq_disrupt_local[indices]
+        for dl in dls:
             if dl < 0:
                 total_neg += T
             elif dl == 0:
                 total_pos += T
             else:
-                d = dl // step
+                d = (dl + 1) // step   # +1 matches label boundary in __getitem__
                 total_neg += d
                 total_pos += T - d
         total = total_pos + total_neg
@@ -521,6 +533,29 @@ def create_loaders(
                 batch_size = batch_size,
                 drop_last  = True,
             )
+
+            # Recompute class weights based on the *effective* training
+            # distribution after stratified balancing.  With undersample=1.0
+            # in disruptcnn, negatives are subsampled to match positives;
+            # here we achieve the same by computing weights from an equal
+            # mix of the positive and negative subsequence pools.
+            n_pos = len(sampler.pos_idx)
+            n_neg = len(sampler.neg_idx)
+            n_eff = min(n_pos, n_neg)   # effective count per class
+            eff_indices = np.concatenate([
+                sampler.pos_idx[:n_eff],
+                sampler.neg_idx[:n_eff],
+            ])
+            old_pw, old_nw = dataset.pos_weight, dataset.neg_weight
+            dataset._compute_class_weights(indices=eff_indices)
+            print(f'[create_loaders] Recomputed class weights after '
+                  f'stratified balancing:')
+            print(f'  before: pos_weight={old_pw:.4f}, '
+                  f'neg_weight={old_nw:.4f}, ratio={old_pw/old_nw:.2f}x')
+            print(f'  after : pos_weight={dataset.pos_weight:.4f}, '
+                  f'neg_weight={dataset.neg_weight:.4f}, '
+                  f'ratio={dataset.pos_weight/dataset.neg_weight:.2f}x')
+
             loaders[split] = DataLoader(
                 dataset,
                 batch_sampler = sampler,
