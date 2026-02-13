@@ -108,8 +108,8 @@ class ECEiTCNDataset(Dataset):
         Twarn:            int   = 300_000,    # 300 ms in samples (1 MHz)
         baseline_length:  int   = 50_000,     # 50 ms  (1 MHz)
         data_step:        int   = 10,         # → 100 kHz
-        nsub:             int   = 500_000,    # 500 ms window (1 MHz)
-        stride:           int | None = None,  # default = nsub (no overlap)
+        nsub:             int   = 781_250,    # ~781 ms window (matches disruptcnn run.sh)
+        stride:           int   = 481_260,    # overlap by receptive field (nsub - nrecept + 1)
         normalize:        bool  = True,
         label_balance:    str   = 'const',    # 'const' | 'none'
         norm_stats_path:  str | None = 'norm_stats.npz',
