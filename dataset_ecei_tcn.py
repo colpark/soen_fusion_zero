@@ -109,7 +109,7 @@ class ECEiTCNDataset(Dataset):
         baseline_length:  int   = 40_000,     # 40 ms  (1 MHz), matches disruptcnn
         data_step:        int   = 10,         # → 100 kHz
         nsub:             int   = 781_250,    # ~781 ms window (matches disruptcnn run.sh)
-        stride:           int   = 481_260,    # overlap by receptive field (nsub - nrecept + 1)
+        stride:           int   = 481_090,    # (nsub/step - nrecept + 1) * step = (78125-30017+1)*10
         normalize:        bool  = True,
         label_balance:    str   = 'const',    # 'const' | 'none'
         norm_stats_path:  str | None = 'norm_stats.npz',
@@ -388,7 +388,8 @@ class ECEiTCNDataset(Dataset):
 
         dl = int(self.seq_disrupt_local[index])
         if dl >= 0:
-            d = min(dl // self._step_in_getitem, T)
+            # +1 matches disruptcnn: (disrupt_idxi - start_idxi + 1) / data_step
+            d = min((dl + 1) // self._step_in_getitem, T)
             target[d:] = 1.0
             weight[d:] = self.pos_weight
 
