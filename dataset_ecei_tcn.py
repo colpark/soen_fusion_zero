@@ -398,6 +398,95 @@ class ECEiTCNDataset(Dataset):
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  Stratified batch sampler — balanced pos/neg in every batch
+# ══════════════════════════════════════════════════════════════════════
+
+import math
+from torch.utils.data import Sampler
+
+class StratifiedBatchSampler(Sampler):
+    """Yield batches where positive and negative subsequences are balanced.
+
+    Each batch contains ``batch_size // 2`` positive (disruptive) indices
+    and ``batch_size - batch_size // 2`` negative (clear) indices.
+    The minority class is oversampled (cycled) so every epoch still
+    covers all samples from the majority class.
+
+    Parameters
+    ----------
+    labels : array-like of bool / 0-1
+        Per-subsequence label (True = contains disruption onset).
+    indices : array-like of int
+        Global dataset indices that belong to this split.
+    batch_size : int
+    drop_last : bool
+        If True, drop the final incomplete batch.
+    seed : int
+        Base random seed; call ``set_epoch(e)`` to re-seed each epoch.
+    """
+
+    def __init__(self, labels, indices, batch_size, drop_last=True, seed=42):
+        self.batch_size = batch_size
+        self.drop_last = drop_last
+        self.seed = seed
+        self._epoch = 0
+
+        labels = np.asarray(labels)
+        indices = np.asarray(indices)
+        self.pos_idx = indices[labels[indices] == 1]
+        self.neg_idx = indices[labels[indices] == 0]
+
+        # how many of each per batch
+        self.n_pos_per_batch = batch_size // 2
+        self.n_neg_per_batch = batch_size - self.n_pos_per_batch
+
+        # total batches so majority class is covered once
+        n_from_pos = math.ceil(len(self.pos_idx) / max(self.n_pos_per_batch, 1))
+        n_from_neg = math.ceil(len(self.neg_idx) / max(self.n_neg_per_batch, 1))
+        self._n_batches = max(n_from_pos, n_from_neg)
+        if self.drop_last:
+            self._total = self._n_batches * batch_size
+        else:
+            # add one partial batch if there are remainders
+            self._total = self._n_batches * batch_size
+
+    def set_epoch(self, epoch: int):
+        """Re-seed the RNG for a new epoch (ensures different shuffles)."""
+        self._epoch = epoch
+
+    def __iter__(self):
+        rng = np.random.RandomState(self.seed + self._epoch)
+
+        # shuffle and cycle to fill exactly _n_batches * n_per_batch
+        pos_shuf = rng.permutation(self.pos_idx)
+        neg_shuf = rng.permutation(self.neg_idx)
+
+        n_pos_needed = self._n_batches * self.n_pos_per_batch
+        n_neg_needed = self._n_batches * self.n_neg_per_batch
+
+        # tile (oversample) the minority side if needed
+        if len(pos_shuf) > 0:
+            pos_ext = np.tile(pos_shuf, math.ceil(n_pos_needed / len(pos_shuf)))[:n_pos_needed]
+        else:
+            pos_ext = np.array([], dtype=int)
+        if len(neg_shuf) > 0:
+            neg_ext = np.tile(neg_shuf, math.ceil(n_neg_needed / len(neg_shuf)))[:n_neg_needed]
+        else:
+            neg_ext = np.array([], dtype=int)
+
+        for b in range(self._n_batches):
+            batch = np.concatenate([
+                pos_ext[b * self.n_pos_per_batch : (b + 1) * self.n_pos_per_batch],
+                neg_ext[b * self.n_neg_per_batch : (b + 1) * self.n_neg_per_batch],
+            ])
+            rng.shuffle(batch)          # shuffle within the batch
+            yield batch.tolist()
+
+    def __len__(self):
+        return self._n_batches
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  DataLoader factory
 # ══════════════════════════════════════════════════════════════════════
 
@@ -405,20 +494,46 @@ def create_loaders(
     dataset: ECEiTCNDataset,
     batch_size: int = 4,
     num_workers: int = 4,
+    stratified_train: bool = True,
 ) -> Dict[str, DataLoader]:
-    """Build DataLoaders for every split present in meta.csv."""
+    """Build DataLoaders for every split present in meta.csv.
+
+    Parameters
+    ----------
+    stratified_train : bool
+        If True (default), the training split uses a
+        ``StratifiedBatchSampler`` so every batch has roughly
+        equal positive / negative subsequences.
+    """
     loaders = {}
     for split in np.unique(dataset.splits):
         idx = dataset.get_split_indices(split)
         if len(idx) == 0:
             continue
-        subset = Subset(dataset, idx)
-        loaders[split] = DataLoader(
-            subset,
-            batch_size  = batch_size,
-            shuffle     = (split == 'train'),
-            num_workers = num_workers,
-            pin_memory  = True,
-            drop_last   = (split == 'train'),
-        )
+
+        is_train = (split == 'train')
+
+        if is_train and stratified_train:
+            sampler = StratifiedBatchSampler(
+                labels     = dataset.seq_has_disrupt.astype(int),
+                indices    = idx,
+                batch_size = batch_size,
+                drop_last  = True,
+            )
+            loaders[split] = DataLoader(
+                dataset,
+                batch_sampler = sampler,
+                num_workers   = num_workers,
+                pin_memory    = True,
+            )
+        else:
+            subset = Subset(dataset, idx)
+            loaders[split] = DataLoader(
+                subset,
+                batch_size  = batch_size,
+                shuffle     = False,
+                num_workers = num_workers,
+                pin_memory  = True,
+                drop_last   = False,
+            )
     return loaders
