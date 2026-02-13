@@ -15,7 +15,7 @@ class ECEiDataset(Dataset):
                  chunk_length,
                  dsrpt_threshold,
                  clear_threshold = None,
-                 baseline_length = 50_000,
+                 baseline_length = 40_000,
                  prob_of_one     = None):
 
         """
@@ -131,7 +131,7 @@ def test(split):
         root            = './dsrpt',
         split           = split,
         chunk_length    = 100_000,
-        baseline_length = 50_000,
+        baseline_length = 40_000,
         dsrpt_threshold = 300_000,
         clear_threshold = 600_000,
         prob_of_one     = .5,

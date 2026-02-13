@@ -34,7 +34,7 @@ class HDF5ToMemMapConverter:
                  output_dir: str,
                  chunk_length: int,
                  chunk_step: int,
-                 baseline_length: int = 50000):
+                 baseline_length: int = 40000):
         """
         Initialize the converter.
 
@@ -44,7 +44,7 @@ class HDF5ToMemMapConverter:
             output_dir: Directory to save memory maps and metadata
             chunk_length: Length L of each chunk
             chunk_step: Step length between chunks
-            baseline_length: Length of baseline section (default 50,000)
+            baseline_length: Length of baseline section (default 40,000)
         """
         self.hdf5_dir   = Path(hdf5_dir)
         self.meta_path  = Path(meta_path)
@@ -274,8 +274,8 @@ def main():
     # Optional arguments
     parser.add_argument('--baseline-length',
                         type    = int,
-                        default = 50000,
-                        help    = 'Length of baseline section (in timesteps)')
+                        default = 40000,
+                        help    = 'Length of baseline section (in timesteps, 40ms at 1MHz)')
 
     args = parser.parse_args()
 

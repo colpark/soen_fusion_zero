@@ -52,7 +52,7 @@ def read_raw_shot(root: str | Path, shot: int) -> np.ndarray:
         return f['LFS'][...].astype(np.float32)
 
 
-def remove_offset(data: np.ndarray, baseline_length: int = 50_000):
+def remove_offset(data: np.ndarray, baseline_length: int = 40_000):
     """Subtract per-channel DC offset estimated from the first samples.
 
     Parameters
@@ -106,7 +106,7 @@ class ECEiTCNDataset(Dataset):
         self,
         root:             str,
         Twarn:            int   = 300_000,    # 300 ms in samples (1 MHz)
-        baseline_length:  int   = 50_000,     # 50 ms  (1 MHz)
+        baseline_length:  int   = 40_000,     # 40 ms  (1 MHz), matches disruptcnn
         data_step:        int   = 10,         # → 100 kHz
         nsub:             int   = 781_250,    # ~781 ms window (matches disruptcnn run.sh)
         stride:           int   = 481_260,    # overlap by receptive field (nsub - nrecept + 1)
