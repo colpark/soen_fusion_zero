@@ -23,6 +23,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.multiprocessing
+# Use filesystem-based sharing instead of /dev/shm to avoid "Bus error"
+# on HPC nodes (e.g. Perlmutter) where shared memory is limited.
+torch.multiprocessing.set_sharing_strategy('file_system')
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
@@ -407,9 +411,9 @@ def parse_args():
     g.add_argument('--epochs', type=int, default=50)
     g.add_argument('--batch-size', type=int, default=48,
                    help='Per-GPU batch size (default: 48, eff. 192 on 4 GPUs)')
-    g.add_argument('--num-workers', type=int, default=16,
-                   help='DataLoader workers per rank (default: 16; '
-                        'with 256 CPUs / 4 GPUs = 64 CPUs/rank)')
+    g.add_argument('--num-workers', type=int, default=8,
+                   help='DataLoader workers per rank (default: 8; '
+                        'uses file_system sharing to avoid /dev/shm limits)')
     g.add_argument('--optimizer', type=str, default='adamw',
                    choices=['adamw', 'sgd'],
                    help='Optimizer (default: adamw)')
@@ -518,6 +522,8 @@ def main():
         batch_sampler=train_sampler,
         num_workers=args.num_workers,
         pin_memory=True,
+        prefetch_factor=2,
+        persistent_workers=True,   # keep workers alive between epochs
     )
 
     # ── Validation loader: distributed across ranks ──────────────────────
@@ -534,6 +540,8 @@ def main():
         num_workers=args.num_workers,
         pin_memory=True,
         drop_last=False,
+        prefetch_factor=2,
+        persistent_workers=True,
     )
 
     log(rank, f'  Train: {len(train_loader)} batches/rank  '
@@ -571,23 +579,46 @@ def main():
     best_f1 = 0.0
     global_step = 0
 
-    if args.resume and Path(args.resume).exists():
-        ckpt = torch.load(args.resume, map_location=device, weights_only=False)
-        model.module.load_state_dict(ckpt['state_dict'])
-        optimizer.load_state_dict(ckpt['optimizer'])
-        start_epoch = ckpt.get('epoch', 0) + 1
-        best_f1 = ckpt.get('best_f1', 0.0)
-        global_step = ckpt.get('global_step', 0)
-        log(rank, f'  Resumed from {args.resume} (epoch {start_epoch - 1}, '
-                  f'best_f1={best_f1:.4f})')
-
-    # ── History (rank 0 only) ────────────────────────────────────────────
+    # initialise empty history
     history = {
         'train_loss': [], 'train_acc': [],
         'val_loss': [], 'val_f1': [], 'val_acc': [],
         'val_precision': [], 'val_recall': [], 'val_threshold': [],
         'lr': [],
     }
+
+    if args.resume and Path(args.resume).exists():
+        ckpt = torch.load(args.resume, map_location=device, weights_only=False)
+
+        # model & optimizer
+        model.module.load_state_dict(ckpt['state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer'])
+
+        # schedulers (restore internal counters, patience, best, etc.)
+        if 'scheduler_warmup' in ckpt:
+            scheduler_warmup.load_state_dict(ckpt['scheduler_warmup'])
+        if 'scheduler_plateau' in ckpt:
+            scheduler_plateau.load_state_dict(ckpt['scheduler_plateau'])
+
+        # counters
+        start_epoch = ckpt.get('epoch', 0) + 1
+        best_f1 = ckpt.get('best_f1', 0.0)
+        global_step = ckpt.get('global_step', 0)
+
+        # restore training history so curves are continuous
+        if 'history' in ckpt:
+            history = ckpt['history']
+        elif rank == 0 and (ckpt_dir / 'history.json').exists():
+            # fallback: load from JSON written by a prior run
+            with open(ckpt_dir / 'history.json') as f:
+                history = json.load(f)
+
+        log(rank, f'  Resumed from {args.resume}')
+        log(rank, f'    epoch      = {start_epoch - 1}  →  continuing at {start_epoch}')
+        log(rank, f'    best_f1    = {best_f1:.4f}')
+        log(rank, f'    global_step= {global_step:,}')
+        log(rank, f'    LR         = {optimizer.param_groups[0]["lr"]:.2e}')
+        log(rank, f'    history pts= {len(history.get("train_loss", []))}')
 
     log(rank, '=' * 90)
 
@@ -649,9 +680,12 @@ def main():
                 'global_step': global_step,
                 'state_dict': model.module.state_dict(),
                 'optimizer': optimizer.state_dict(),
+                'scheduler_warmup': scheduler_warmup.state_dict(),
+                'scheduler_plateau': scheduler_plateau.state_dict(),
                 'best_f1': best_f1,
                 'threshold': val_metrics['threshold'],
                 'nrecept': nrecept,
+                'history': history,
                 'args': vars(args),
             }
             torch.save(state, ckpt_dir / 'last.pt')
