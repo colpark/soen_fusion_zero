@@ -104,7 +104,17 @@ class ECEiTCNDataset(Dataset):
         stride:           int | None = None,  # default = nsub (no overlap)
         normalize:        bool  = True,
         label_balance:    str   = 'const',    # 'const' | 'none'
+        norm_stats_path:  str | None = 'norm_stats.npz',  # path to cache
+        norm_train_split: str   = 'train',
+        norm_max_shots:   int   = 100,
     ):
+        """
+        Args (new, related to normalisation caching):
+            norm_stats_path:  Where to save / load per-channel mean & std.
+                              Set to None to skip automatic loading/computing.
+            norm_train_split: Which split to use when computing stats.
+            norm_max_shots:   Max number of shots sampled for stat estimation.
+        """
         self.root             = Path(root)
         self.Twarn            = Twarn
         self.baseline_length  = baseline_length
@@ -128,9 +138,20 @@ class ECEiTCNDataset(Dataset):
         self.start_idx = np.full(len(self.shots), self.baseline_length)
         self.stop_idx  = self.t_dis.copy()
 
-        # normalisation (call compute_norm_stats before training)
+        # normalisation – auto load / compute / save
         self.norm_mean: Optional[np.ndarray] = None   # (20, 8)
         self.norm_std:  Optional[np.ndarray] = None   # (20, 8)
+
+        if self.normalize and norm_stats_path is not None:
+            p = Path(norm_stats_path)
+            if p.exists():
+                self.load_norm_stats(str(p))
+                print(f'[ECEiTCNDataset] Loaded norm stats from {p}')
+            else:
+                self.compute_norm_stats(split=norm_train_split,
+                                        max_shots=norm_max_shots)
+                self.save_norm_stats(str(p))
+                print(f'[ECEiTCNDataset] Computed & saved norm stats to {p}')
 
         # subsequences & class weights
         self._build_subsequences()
