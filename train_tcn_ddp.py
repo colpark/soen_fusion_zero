@@ -408,7 +408,9 @@ def parse_args():
 
     # ── training ──
     g = p.add_argument_group('training')
-    g.add_argument('--epochs', type=int, default=50)
+    g.add_argument('--epochs', type=int, default=200,
+                   help='Total epochs (default: 200; with 4 GPUs each epoch '
+                        'has ~1/4 the gradient updates of single-GPU)')
     g.add_argument('--batch-size', type=int, default=48,
                    help='Per-GPU batch size (default: 48, eff. 192 on 4 GPUs)')
     g.add_argument('--num-workers', type=int, default=8,
@@ -418,12 +420,13 @@ def parse_args():
                    choices=['adamw', 'sgd'],
                    help='Optimizer (default: adamw)')
     g.add_argument('--lr', type=float, default=None,
-                   help='Learning rate (default: 3e-3 for AdamW, 0.5 for SGD)')
+                   help='Learning rate (default: 1e-3 for AdamW, 0.5 for SGD)')
     g.add_argument('--weight-decay', type=float, default=1e-4)
     g.add_argument('--momentum', type=float, default=0.9,
                    help='SGD momentum (ignored for AdamW)')
     g.add_argument('--clip', type=float, default=0.3)
-    g.add_argument('--warmup-epochs', type=int, default=5)
+    g.add_argument('--warmup-epochs', type=int, default=20,
+                   help='Warmup epochs (default: 20; ~5 single-GPU-equiv epochs)')
     g.add_argument('--warmup-factor', type=int, default=8)
     g.add_argument('--log-every', type=int, default=5)
 
@@ -448,8 +451,10 @@ def main():
     torch.cuda.set_device(device)
 
     # set default LR based on optimizer choice
+    # NOTE: for AdamW, LR does NOT need linear scaling with batch size.
+    # Keep at 1e-3, same as the single-GPU baseline that achieved 0.91 F1.
     if args.lr is None:
-        args.lr = 3e-3 if args.optimizer == 'adamw' else 0.5
+        args.lr = 1e-3 if args.optimizer == 'adamw' else 0.5
 
     eff_batch = args.batch_size * world_size
     log(rank, '=' * 90)
