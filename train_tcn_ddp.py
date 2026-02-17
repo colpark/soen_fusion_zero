@@ -32,7 +32,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.nn.utils import weight_norm
+from torch.nn.utils.parametrizations import weight_norm
 from torch.utils.data import DataLoader, Subset
 
 from dataset_ecei_tcn import ECEiTCNDataset, StratifiedBatchSampler
@@ -385,14 +385,25 @@ def parse_args():
     p = argparse.ArgumentParser(
         description='Distributed TCN training for disruption prediction')
 
-    # ── data ──
+    # ── data (defaults: SciServer paths) ─────────────────────────────
     g = p.add_argument_group('data')
     g.add_argument('--root', type=str,
-                   default='/global/cfs/cdirs/m5187/proj-share/ECEi_excerpt/dsrpt')
+                   default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/dsrpt')
     g.add_argument('--decimated-root', type=str,
-                   default='/global/cfs/cdirs/m5187/proj-share/ECEi_excerpt/dsrpt_decimated')
+                   default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/dsrpt_decimated')
+    g.add_argument('--clear-root', type=str,
+                   default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/clear',
+                   help='Directory with non-disruptive shots (whole shot = clear)')
+    g.add_argument('--clear-decimated-root', type=str,
+                   default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/clear_decimated',
+                   help='Pre-decimated clear shots (optional)')
     g.add_argument('--data-step', type=int, default=10)
-    g.add_argument('--twarn', type=int, default=300_000)
+    g.add_argument('--twarn', type=int, default=300_000,
+                   help='Label as disruptive within this many samples (1 MHz) before t_disrupt (300_000 = 300 ms)')
+    g.add_argument('--exclude-last-ms', type=float, default=0.0,
+                   help='Do not label last N ms before disruption as 1 (e.g. 30 for mitigation; reduces FPs)')
+    g.add_argument('--ignore-twarn', action='store_true',
+                   help='Do not train on the Twarn window (weight=0); learn disruptive vs clear from data')
     g.add_argument('--baseline-len', type=int, default=40_000)
     g.add_argument('--nsub', type=int, default=781_250)
 
@@ -487,7 +498,11 @@ def main():
     ds = ECEiTCNDataset(
         root=args.root,
         decimated_root=args.decimated_root,
+        clear_root=args.clear_root,
+        clear_decimated_root=args.clear_decimated_root,
         Twarn=args.twarn,
+        exclude_last_ms=args.exclude_last_ms,
+        ignore_twarn=args.ignore_twarn,
         baseline_length=args.baseline_len,
         data_step=args.data_step,
         nsub=args.nsub,

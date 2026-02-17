@@ -4,11 +4,18 @@ Adapted from disruptcnn (Churchill et al. 2019) for KSTAR ECEi data.
 
 Data layout
 -----------
-root/
+root/  (disruptive shots)
   meta.csv          – columns: shot, split, t_disruption (ms), ...
   {shot}.h5         – HDF5 with key 'LFS' → (20, 8, T) float at 1 MHz
 
-Optionally, a *decimated_root* directory can hold pre-processed files:
+Optionally, *clear_root* adds non-disruptive shots (no disruption; whole shot = clear):
+  clear_root/
+    meta.csv        – columns: shot, split (t_disruption optional/NaN)
+    {shot}.h5       – same LFS layout
+  If meta.csv is missing, shot IDs are discovered from *.h5 and splits
+  assigned by clear_split_frac (e.g. 80% train, 20% test).
+
+Optionally, *decimated_root* / *clear_decimated_root* hold pre-processed files:
   decimated_root/
     meta.csv        – same as root
     {shot}.h5       – offset-removed & decimated: (20, 8, T/data_step)
@@ -22,12 +29,23 @@ Preprocessing pipeline (applied in __getitem__ when reading raw data)
 2. Temporal decimation – keep every *data_step*-th sample (1 MHz → 100 kHz at step=10)
 3. Z-score normalisation – per-channel (20×8) mean/std computed from training shots
 
+Twarn (warning window)
+----------------------
+Twarn is the pre-disruption window in samples at 1 MHz (e.g. 300_000 = 300 ms).
+It defines (t_disrupt - Twarn, t_disrupt]. By default we label that window as 1.
+With ignore_twarn=True we do not train on it (weight=0); only clear (0) is
+learned and the boundary is not assumed.
+
 Label construction
 ------------------
-Per-timestep binary:
-  0 (clear)      for time > Twarn before disruption
-  1 (disruptive) for time ≤ Twarn before disruption
-All shots in the dsrpt directory are disruptive.
+Per-timestep binary (when ignore_twarn=False):
+  0 (clear)      for time > Twarn before disruption (and optionally in the last
+                 exclude_last_ms before disruption, if set)
+  1 (disruptive) for time in (t_disrupt - Twarn, t_disrupt - exclude_last_ms]
+  Optionally the last exclude_last_ms (e.g. 30 ms) can be excluded from the
+  positive class (Churchill et al.: mitigation timing).
+When ignore_twarn=True: the Twarn window is masked from loss (weight=0).
+Shots from root are disruptive; optional clear_root adds non-disruptive shots (whole shot = clear).
 """
 
 from __future__ import annotations
@@ -39,7 +57,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, Subset
 from pathlib import Path
 from tqdm import tqdm
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, List
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -116,16 +134,21 @@ class ECEiTCNDataset(Dataset):
         norm_train_split: str   = 'train',
         norm_max_shots:   int   = 100,
         decimated_root:   str | None = None,
+        clear_root:       str | None = None,
+        clear_decimated_root: str | None = None,
+        clear_split_frac: Optional[Dict[str, float]] = None,
+        exclude_last_ms:  float = 0.0,        # don't label last N ms as 1 (Churchill: 30 ms for mitigation)
+        ignore_twarn:     bool   = False,     # if True, do not train on Twarn window (weight=0); learn boundary
     ):
         """
         Args:
-            root:             Directory with meta.csv and raw {shot}.h5 files.
-            decimated_root:   Directory with pre-decimated h5 files (offset-
-                              removed & decimated).  If it exists the dataset
-                              reads from here, skipping offset removal and
-                              decimation for faster I/O.
+            root:             Directory with meta.csv and raw {shot}.h5 (disruptive).
+            decimated_root:   Directory with pre-decimated h5 files (disruptive).
+            clear_root:      Optional directory with non-disruptive shots (whole shot = clear).
+            clear_decimated_root: Optional pre-decimated clear shots.
+            clear_split_frac: If clear_root has no meta.csv, assign splits by fraction
+                              e.g. {'train': 0.8, 'test': 0.2}. Default 80% train, 20% test.
             norm_stats_path:  Where to save / load per-channel mean & std.
-                              Set to None to skip automatic loading/computing.
             norm_train_split: Which split to use when computing stats.
             norm_max_shots:   Max number of shots sampled for stat estimation.
         All time parameters (Twarn, baseline_length, nsub, stride) are
@@ -140,6 +163,8 @@ class ECEiTCNDataset(Dataset):
         self.stride           = stride if stride is not None else nsub
         self.normalize        = normalize
         self.label_balance    = label_balance
+        self.exclude_last_ms  = exclude_last_ms
+        self.ignore_twarn    = ignore_twarn
 
         # ── check for pre-decimated data ──────────────────────────────
         self._use_decimated = False
@@ -152,35 +177,43 @@ class ECEiTCNDataset(Dataset):
                 print(f'[ECEiTCNDataset] Using pre-decimated data '
                       f'from {p}')
 
-        # ── metadata ──────────────────────────────────────────────────
+        # ── metadata: disruptive from root ─────────────────────────────
         self.meta = pd.read_csv(self.root / 'meta.csv')
         self.shots   = self.meta['shot'].values.astype(int)
         self.splits  = self.meta['split'].values.astype(str)
 
-        # ── index math ────────────────────────────────────────────────
-        # All internal indices (_data_*) are in "data-file sample space":
-        #   raw mode      → 1 MHz   (indices as-is)
-        #   decimated mode → 100 kHz (indices / data_step)
-        # _step_in_getitem is the decimation left to do at read time.
-        if self._use_decimated:
-            q = self.data_step
-            self.t_dis       = (self.meta['t_disruption'].values * 1000 / q).astype(int)
-            self.disrupt_idx = self.t_dis - self.Twarn // q
-            self.start_idx   = np.full(len(self.shots), self.baseline_length // q)
-            self.stop_idx    = self.t_dis.copy()
-            self._data_nsub    = self.nsub   // q
-            self._data_stride  = self.stride // q
-            self._step_in_getitem = 1        # already decimated
-            self._data_root    = self._decimated_root
-        else:
-            self.t_dis       = (self.meta['t_disruption'].values * 1000).astype(int)
-            self.disrupt_idx = self.t_dis - self.Twarn
-            self.start_idx   = np.full(len(self.shots), self.baseline_length)
-            self.stop_idx    = self.t_dis.copy()
-            self._data_nsub    = self.nsub
-            self._data_stride  = self.stride
-            self._step_in_getitem = self.data_step
-            self._data_root    = self.root
+        q = self.data_step if self._use_decimated else 1
+        self.t_dis       = (self.meta['t_disruption'].values * 1000 / q).astype(int)
+        self.disrupt_idx = self.t_dis - self.Twarn // q
+        exclude_samps   = int(self.exclude_last_ms * (1000 / q))  # ms → samples in data space
+        self.positive_end_idx = np.maximum(
+            self.disrupt_idx,
+            self.t_dis - exclude_samps,
+        ).astype(np.int64)  # end of "label 1" region (don't label last exclude_last_ms as 1)
+        self.start_idx   = np.full(len(self.shots), self.baseline_length // q)
+        self.stop_idx    = self.t_dis.copy()
+
+        # Per-shot data root and step (for mixed disruptive + clear)
+        self._shot_data_root: list = [
+            self._decimated_root if self._use_decimated else self.root
+        ] * len(self.shots)
+        self._shot_step: list = [1 if self._use_decimated else self.data_step] * len(self.shots)
+
+        # ── append clear (non-disruptive) shots if requested ──────────
+        if clear_root is not None:
+            clear_path = Path(clear_root)
+            if clear_path.exists():
+                self._add_clear_shots(
+                    clear_path,
+                    Path(clear_decimated_root) if clear_decimated_root else None,
+                    clear_split_frac,
+                )
+
+        # ── index math (common) ────────────────────────────────────────
+        self._data_nsub    = self.nsub // q
+        self._data_stride  = self.stride // q
+        self._data_root    = self._decimated_root if self._use_decimated else self.root
+        self._step_in_getitem = 1 if self._use_decimated else self.data_step
 
         # Output temporal length (always the same regardless of mode)
         self._T_sub = self.nsub // self.data_step
@@ -204,11 +237,127 @@ class ECEiTCNDataset(Dataset):
         self._build_subsequences()
         self._compute_class_weights()
 
+    def _add_clear_shots(
+        self,
+        clear_root: Path,
+        clear_decimated_root: Optional[Path],
+        clear_split_frac: Optional[Dict[str, float]],
+    ) -> None:
+        """Append non-disruptive shots from clear_root. Whole shot = clear (label 0)."""
+        q = self.data_step if self._use_decimated else 1
+        use_clear_decimated = (
+            clear_decimated_root is not None
+            and clear_decimated_root.exists()
+        )
+
+        # Discover clear shots and splits
+        clear_meta_path = clear_root / "meta.csv"
+        if clear_meta_path.exists():
+            clear_meta = pd.read_csv(clear_meta_path)
+            if "shot" not in clear_meta.columns:
+                raise ValueError(f"{clear_meta_path} must have 'shot' column")
+            clear_shots = clear_meta["shot"].values.astype(int)
+            clear_splits = (
+                clear_meta["split"].values.astype(str)
+                if "split" in clear_meta.columns
+                else np.array(["train"] * len(clear_shots))
+            )
+        else:
+            h5_files = list(clear_root.glob("*.h5"))
+            clear_shots = np.array([int(f.stem) for f in h5_files if f.stem.isdigit()])
+            if len(clear_shots) == 0:
+                clear_shots = np.array([int(f.stem) for f in h5_files])
+            if len(clear_shots) == 0:
+                print(f"[ECEiTCNDataset] No clear shots found in {clear_root}")
+                return
+            frac = clear_split_frac or {"train": 0.8, "test": 0.2}
+            n_train = int(len(clear_shots) * frac.get("train", 0.8))
+            n_test = len(clear_shots) - n_train
+            clear_splits = np.array(
+                ["train"] * n_train + ["test"] * n_test,
+                dtype=object,
+            )
+
+        start_list = []
+        stop_list = []
+        disrupt_list = []
+        root_list: List[Path] = []
+        step_list: List[int] = []
+        shots_loaded = []
+        splits_loaded = []
+
+        for i, shot in enumerate(clear_shots):
+            read_root = (
+                clear_decimated_root
+                if (use_clear_decimated and self._use_decimated)
+                else clear_root
+            )
+            h5_path = read_root / f"{shot}.h5"
+            if not h5_path.exists():
+                continue
+            with h5py.File(h5_path, "r") as f:
+                T = f["LFS"].shape[-1]
+            if use_clear_decimated and self._use_decimated:
+                # Clear decimated: T already in decimated space
+                start_list.append(self.baseline_length // self.data_step)
+                stop_list.append(T)
+                disrupt_list.append(T + 1)
+                root_list.append(clear_decimated_root)
+                step_list.append(1)
+            elif self._use_decimated and not use_clear_decimated:
+                # Main uses decimated, clear is raw: convert to decimated space
+                start_list.append(self.baseline_length // self.data_step)
+                stop_list.append(T // self.data_step)
+                disrupt_list.append(T // self.data_step + 1)
+                root_list.append(clear_root)
+                step_list.append(self.data_step)
+            else:
+                # raw space (main is raw)
+                start_list.append(self.baseline_length)
+                stop_list.append(T)
+                disrupt_list.append(T + 1)
+                root_list.append(clear_root)
+                step_list.append(self.data_step)
+            shots_loaded.append(shot)
+            splits_loaded.append(clear_splits[i])
+
+        if not start_list:
+            print(f"[ECEiTCNDataset] No valid clear shots loaded from {clear_root}")
+            return
+
+        n_clear = len(start_list)
+        self.shots = np.concatenate([self.shots, np.array(shots_loaded)])
+        self.splits = np.concatenate([self.splits, np.array(splits_loaded)])
+        self.start_idx = np.concatenate(
+            [self.start_idx, np.array(start_list, dtype=np.int64)]
+        )
+        self.stop_idx = np.concatenate(
+            [self.stop_idx, np.array(stop_list, dtype=np.int64)]
+        )
+        self.disrupt_idx = np.concatenate(
+            [self.disrupt_idx, np.array(disrupt_list, dtype=np.int64)]
+        )
+        self.positive_end_idx = np.concatenate(
+            [self.positive_end_idx, np.array(stop_list, dtype=np.int64)]
+        )
+        self.t_dis = np.concatenate(
+            [self.t_dis, np.array(stop_list, dtype=np.int64)]
+        )
+        self._shot_data_root = list(self._shot_data_root) + root_list
+        self._shot_step = list(self._shot_step) + step_list
+
+        self.meta = pd.DataFrame(
+            {"shot": self.shots, "split": self.splits, "t_disruption": self.t_dis * q / 1000}
+        )
+        print(
+            f"[ECEiTCNDataset] Added {n_clear} non-disruptive (clear) shots from {clear_root}"
+        )
+
     # ── subsequence tiling ────────────────────────────────────────────
 
     def _build_subsequences(self):
         """Tile each shot into fixed-length windows (in data-file space)."""
-        shot_idx, starts, stops, d_local = [], [], [], []
+        shot_idx, starts, stops, d_local, e_local = [], [], [], [], []
         nsub   = self._data_nsub
         stride = self._data_stride
 
@@ -218,6 +367,7 @@ class ECEiTCNDataset(Dataset):
                 continue                          # shot too short
 
             d = int(self.disrupt_idx[s])          # absolute disrupt index
+            e_abs = int(self.positive_end_idx[s]) # end of "label 1" region
 
             pos = a
             while pos + nsub <= b:
@@ -228,10 +378,13 @@ class ECEiTCNDataset(Dataset):
                 # local disrupt offset inside this window
                 if d <= pos:
                     d_local.append(0)             # fully disruptive
+                    e_local.append(min(pos + nsub, e_abs) - pos)
                 elif d >= pos + nsub:
                     d_local.append(-1)            # fully clear
+                    e_local.append(0)
                 else:
                     d_local.append(d - pos)       # transition inside
+                    e_local.append(min(pos + nsub, e_abs) - pos)
 
                 pos += stride
 
@@ -243,16 +396,20 @@ class ECEiTCNDataset(Dataset):
                 stops.append(b)
                 if d <= last_start:
                     d_local.append(0)
+                    e_local.append(min(b, e_abs) - last_start)
                 elif d >= b:
                     d_local.append(-1)
+                    e_local.append(0)
                 else:
                     d_local.append(d - last_start)
+                    e_local.append(min(b, e_abs) - last_start)
 
-        self.seq_shot_idx     = np.array(shot_idx,  dtype=int)
-        self.seq_start        = np.array(starts,    dtype=int)
-        self.seq_stop         = np.array(stops,     dtype=int)
-        self.seq_disrupt_local = np.array(d_local,  dtype=int)
-        self.seq_has_disrupt  = self.seq_disrupt_local >= 0
+        self.seq_shot_idx        = np.array(shot_idx,  dtype=int)
+        self.seq_start           = np.array(starts,    dtype=int)
+        self.seq_stop            = np.array(stops,     dtype=int)
+        self.seq_disrupt_local   = np.array(d_local,  dtype=int)
+        self.seq_positive_end_local = np.array(e_local, dtype=int)
+        self.seq_has_disrupt     = self.seq_disrupt_local >= 0
 
     # ── class weights ─────────────────────────────────────────────────
 
@@ -272,15 +429,24 @@ class ECEiTCNDataset(Dataset):
         total_pos, total_neg = 0, 0
 
         dls = self.seq_disrupt_local if indices is None else self.seq_disrupt_local[indices]
-        for dl in dls:
+        els = self.seq_positive_end_local if indices is None else self.seq_positive_end_local[indices]
+        for dl, el in zip(dls, els):
             if dl < 0:
                 total_neg += T
+            elif self.ignore_twarn:
+                # Twarn window is masked; only pre-d timesteps count as neg
+                d = (dl + 1) // step
+                total_neg += d
             elif dl == 0:
-                total_pos += T
+                e = min((el + step - 1) // step, T)
+                total_pos += e
+                total_neg += T - e
             else:
                 d = (dl + 1) // step   # +1 matches label boundary in __getitem__
-                total_neg += d
-                total_pos += T - d
+                e = min((el + step - 1) // step, T)
+                e = max(d, e)
+                total_neg += d + (T - e)
+                total_pos += e - d
         total = total_pos + total_neg
         if self.label_balance == 'const' and total_pos > 0 and total_neg > 0:
             self.pos_weight = float(0.5 * total / total_pos)
@@ -308,22 +474,34 @@ class ECEiTCNDataset(Dataset):
 
         for s in tqdm(indices, desc=f'Norm stats ({split})'):
             shot = self.shots[s]
-            with h5py.File(self._data_root / f'{shot}.h5', 'r') as f:
-                chunk = f['LFS'][..., self.start_idx[s]:self.stop_idx[s]]
-                if not self._use_decimated:
-                    baseline = f['LFS'][..., :self.baseline_length]
+            data_root = Path(self._shot_data_root[s])
+            step = self._shot_step[s]
+            a, b = self.start_idx[s], self.stop_idx[s]
+            if step > 1:
+                a, b = a * step, b * step
+            try:
+                with h5py.File(data_root / f'{shot}.h5', 'r') as f:
+                    chunk = f['LFS'][..., a:b]
+                    if step > 1:
+                        baseline = f['LFS'][..., :self.baseline_length]
+            except OSError as e:
+                # e.g. "filter returned failure during read" on compressed HDF5
+                print(f'[ECEiTCNDataset] Skipping shot {shot} for norm stats: {e}')
+                continue
 
-            if self._use_decimated:
+            if step == 1:
                 data = chunk.astype(np.float64)
             else:
                 offset = np.mean(baseline, axis=-1, keepdims=True)
-                data = (chunk - offset).astype(np.float64)
+                data = (chunk - offset)[..., ::step].astype(np.float64)
 
             T = data.shape[-1]
             running_sum    += data.sum(axis=-1)
             running_sq_sum += (data ** 2).sum(axis=-1)
             n_total += T
 
+        if n_total == 0:
+            raise RuntimeError('Norm stats: no shots could be read (all failed with OSError)')
         mean = (running_sum / n_total).astype(np.float32)
         var  = (running_sq_sum / n_total) - mean.astype(np.float64) ** 2
         std  = np.sqrt(np.maximum(var, 1e-12)).astype(np.float32)
@@ -374,20 +552,27 @@ class ECEiTCNDataset(Dataset):
     def __getitem__(self, index):
         s    = int(self.seq_shot_idx[index])
         shot = self.shots[s]
+        data_root = self._shot_data_root[s]
+        step = self._shot_step[s]
+        start, stop = int(self.seq_start[index]), int(self.seq_stop[index])
+        if step > 1:
+            start_raw, stop_raw = start * step, stop * step
+        else:
+            start_raw, stop_raw = start, stop
 
-        with h5py.File(self._data_root / f'{shot}.h5', 'r') as f:
-            X = f['LFS'][..., self.seq_start[index]:self.seq_stop[index]].astype(np.float32)
-            if not self._use_decimated:
+        with h5py.File(Path(data_root) / f'{shot}.h5', 'r') as f:
+            X = f['LFS'][..., start_raw:stop_raw].astype(np.float32)
+            if step > 1:
                 baseline = f['LFS'][..., :self.baseline_length].astype(np.float32)
 
-        # 1. offset removal  (skip if pre-decimated)
-        if not self._use_decimated:
+        # 1. offset removal  (skip if pre-decimated, i.e. step==1)
+        if step > 1:
             offset = np.mean(baseline, axis=-1, keepdims=True)
             X -= offset
 
-        # 2. temporal decimation  (skip if pre-decimated)
-        if self._step_in_getitem > 1:
-            X = X[..., ::self._step_in_getitem]
+        # 2. temporal decimation  (skip if already decimated)
+        if step > 1:
+            X = X[..., ::step]
 
         # 3. normalisation
         if self.normalize and self.norm_mean is not None:
@@ -399,11 +584,23 @@ class ECEiTCNDataset(Dataset):
         weight = np.full(T, self.neg_weight, dtype=np.float32)
 
         dl = int(self.seq_disrupt_local[index])
+        el = int(self.seq_positive_end_local[index])  # end of "1" region in data space
+        step = self._step_in_getitem
         if dl >= 0:
             # +1 matches disruptcnn: (disrupt_idxi - start_idxi + 1) / data_step
-            d = min((dl + 1) // self._step_in_getitem, T)
-            target[d:] = 1.0
-            weight[d:] = self.pos_weight
+            d = min((dl + 1) // step, T)
+            if self.ignore_twarn:
+                # Do not train on the Twarn window: mask it from loss (weight=0).
+                # Only "clear" (0) before the window is learned; boundary is not assumed.
+                weight[d:] = 0.0
+            else:
+                e = min((el + step - 1) // step, T)  # end of positive in output steps
+                e = max(d, e)  # ensure e >= d
+                target[d:e] = 1.0
+                weight[d:e] = self.pos_weight
+                # Excluded segment [e:T] (e.g. last 30 ms): leave target=0, weight=0 so no loss
+                if e < T:
+                    weight[e:] = 0.0
 
         return (torch.from_numpy(np.ascontiguousarray(X)),
                 torch.from_numpy(target),
