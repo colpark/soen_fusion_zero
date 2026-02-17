@@ -32,7 +32,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.nn.utils import weight_norm
+from torch.nn.utils.parametrizations import weight_norm
 from torch.utils.data import DataLoader, Subset
 
 from dataset_ecei_tcn import ECEiTCNDataset, StratifiedBatchSampler

@@ -479,22 +479,31 @@ class ECEiTCNDataset(Dataset):
             a, b = self.start_idx[s], self.stop_idx[s]
             if step > 1:
                 a, b = a * step, b * step
-            with h5py.File(data_root / f'{shot}.h5', 'r') as f:
-                chunk = f['LFS'][..., a:b]
-                if step > 1:
-                    baseline = f['LFS'][..., :self.baseline_length]
+            try:
+                with h5py.File(data_root / f'{shot}.h5', 'r') as f:
+                    chunk = np.asarray(f['LFS'][..., a:b], dtype=np.float64)
+                    if step > 1:
+                        baseline = np.asarray(f['LFS'][..., :self.baseline_length], dtype=np.float64)
+            except (OSError, IOError) as e:
+                print(f'[ECEiTCNDataset] Skipping shot {shot} for norm stats: {e}')
+                continue
 
-            if step == 1:
-                data = chunk.astype(np.float64)
-            else:
-                offset = np.mean(baseline, axis=-1, keepdims=True)
-                data = (chunk - offset)[..., ::step].astype(np.float64)
+            try:
+                if step == 1:
+                    data = chunk
+                else:
+                    offset = np.mean(baseline, axis=-1, keepdims=True)
+                    data = (chunk - offset)[..., ::step].astype(np.float64)
+                T = data.shape[-1]
+                running_sum    += data.sum(axis=-1)
+                running_sq_sum += (data ** 2).sum(axis=-1)
+                n_total += T
+            except (OSError, IOError) as e:
+                print(f'[ECEiTCNDataset] Skipping shot {shot} for norm stats (after read): {e}')
+                continue
 
-            T = data.shape[-1]
-            running_sum    += data.sum(axis=-1)
-            running_sq_sum += (data ** 2).sum(axis=-1)
-            n_total += T
-
+        if n_total == 0:
+            raise RuntimeError('Norm stats: no shots could be read (all failed with OSError)')
         mean = (running_sum / n_total).astype(np.float32)
         var  = (running_sq_sum / n_total) - mean.astype(np.float64) ** 2
         std  = np.sqrt(np.maximum(var, 1e-12)).astype(np.float32)
