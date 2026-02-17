@@ -3,11 +3,14 @@
 #  Distributed TCN training — 4-GPU launch script
 #
 #  Usage:
-#      bash run_train.sh                    # defaults (AdamW, 48/GPU)
+#      bash run_train.sh                    # defaults (AdamW, 48/GPU, SciServer paths)
 #      bash run_train.sh --lr 0.5 --optimizer sgd   # match disruptcnn
 #      bash run_train.sh --batch-size 24             # smaller per GPU
 #      bash run_train.sh --resume checkpoints_tcn_ddp/last.pt
+#      bash run_train.sh --clear-root /path/to/clear   # non-disruptive shots (optional)
 #
+#  Default data paths (SciServer): dsrpt + clear under
+#  /home/idies/workspace/Storage/yhuang2/persistent/ecei/
 #  The script uses torchrun (elastic launch) with NCCL backend.
 # ═══════════════════════════════════════════════════════════════════════
 

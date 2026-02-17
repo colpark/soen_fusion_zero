@@ -388,9 +388,15 @@ def parse_args():
     # ── data ──
     g = p.add_argument_group('data')
     g.add_argument('--root', type=str,
-                   default='/global/cfs/cdirs/m5187/proj-share/ECEi_excerpt/dsrpt')
+                   default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/dsrpt')
     g.add_argument('--decimated-root', type=str,
-                   default='/global/cfs/cdirs/m5187/proj-share/ECEi_excerpt/dsrpt_decimated')
+                   default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/dsrpt_decimated')
+    g.add_argument('--clear-root', type=str,
+                   default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/clear',
+                   help='Directory with non-disruptive shots (whole shot = clear)')
+    g.add_argument('--clear-decimated-root', type=str,
+                   default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/clear_decimated',
+                   help='Pre-decimated clear shots (optional)')
     g.add_argument('--data-step', type=int, default=10)
     g.add_argument('--twarn', type=int, default=300_000)
     g.add_argument('--baseline-len', type=int, default=40_000)
@@ -487,6 +493,8 @@ def main():
     ds = ECEiTCNDataset(
         root=args.root,
         decimated_root=args.decimated_root,
+        clear_root=args.clear_root,
+        clear_decimated_root=args.clear_decimated_root,
         Twarn=args.twarn,
         baseline_length=args.baseline_len,
         data_step=args.data_step,
