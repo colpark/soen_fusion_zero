@@ -562,10 +562,18 @@ class ECEiTCNDataset(Dataset):
         else:
             start_raw, stop_raw = start, stop
 
-        with h5py.File(Path(data_root) / f'{shot}.h5', 'r') as f:
-            X = f['LFS'][..., start_raw:stop_raw].astype(np.float32)
-            if step > 1:
-                baseline = f['LFS'][..., :self.baseline_length].astype(np.float32)
+        try:
+            with h5py.File(Path(data_root) / f'{shot}.h5', 'r') as f:
+                X = np.asarray(f['LFS'][..., start_raw:stop_raw], dtype=np.float32)
+                if step > 1:
+                    baseline = np.asarray(
+                        f['LFS'][..., :self.baseline_length], dtype=np.float32
+                    )
+        except (OSError, IOError) as e:
+            raise RuntimeError(
+                f'HDF5 read failed for shot {shot} ({data_root / f"{shot}.h5"}): {e}. '
+                'File may use an unsupported compression filter.'
+            ) from e
 
         # 1. offset removal  (skip if pre-decimated, i.e. step==1)
         if step > 1:
