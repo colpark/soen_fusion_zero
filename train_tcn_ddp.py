@@ -385,7 +385,7 @@ def parse_args():
     p = argparse.ArgumentParser(
         description='Distributed TCN training for disruption prediction')
 
-    # ── data ──
+    # ── data (defaults: SciServer paths) ─────────────────────────────
     g = p.add_argument_group('data')
     g.add_argument('--root', type=str,
                    default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/dsrpt')
@@ -398,7 +398,12 @@ def parse_args():
                    default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/clear_decimated',
                    help='Pre-decimated clear shots (optional)')
     g.add_argument('--data-step', type=int, default=10)
-    g.add_argument('--twarn', type=int, default=300_000)
+    g.add_argument('--twarn', type=int, default=300_000,
+                   help='Label as disruptive within this many samples (1 MHz) before t_disrupt (300_000 = 300 ms)')
+    g.add_argument('--exclude-last-ms', type=float, default=0.0,
+                   help='Do not label last N ms before disruption as 1 (e.g. 30 for mitigation; reduces FPs)')
+    g.add_argument('--ignore-twarn', action='store_true',
+                   help='Do not train on the Twarn window (weight=0); learn disruptive vs clear from data')
     g.add_argument('--baseline-len', type=int, default=40_000)
     g.add_argument('--nsub', type=int, default=781_250)
 
@@ -496,6 +501,8 @@ def main():
         clear_root=args.clear_root,
         clear_decimated_root=args.clear_decimated_root,
         Twarn=args.twarn,
+        exclude_last_ms=args.exclude_last_ms,
+        ignore_twarn=args.ignore_twarn,
         baseline_length=args.baseline_len,
         data_step=args.data_step,
         nsub=args.nsub,

@@ -29,11 +29,22 @@ Preprocessing pipeline (applied in __getitem__ when reading raw data)
 2. Temporal decimation – keep every *data_step*-th sample (1 MHz → 100 kHz at step=10)
 3. Z-score normalisation – per-channel (20×8) mean/std computed from training shots
 
+Twarn (warning window)
+----------------------
+Twarn is the pre-disruption window in samples at 1 MHz (e.g. 300_000 = 300 ms).
+It defines (t_disrupt - Twarn, t_disrupt]. By default we label that window as 1.
+With ignore_twarn=True we do not train on it (weight=0); only clear (0) is
+learned and the boundary is not assumed.
+
 Label construction
 ------------------
-Per-timestep binary:
-  0 (clear)      for time > Twarn before disruption
-  1 (disruptive) for time ≤ Twarn before disruption
+Per-timestep binary (when ignore_twarn=False):
+  0 (clear)      for time > Twarn before disruption (and optionally in the last
+                 exclude_last_ms before disruption, if set)
+  1 (disruptive) for time in (t_disrupt - Twarn, t_disrupt - exclude_last_ms]
+  Optionally the last exclude_last_ms (e.g. 30 ms) can be excluded from the
+  positive class (Churchill et al.: mitigation timing).
+When ignore_twarn=True: the Twarn window is masked from loss (weight=0).
 Shots from root are disruptive; optional clear_root adds non-disruptive shots (whole shot = clear).
 """
 
@@ -126,6 +137,8 @@ class ECEiTCNDataset(Dataset):
         clear_root:       str | None = None,
         clear_decimated_root: str | None = None,
         clear_split_frac: Optional[Dict[str, float]] = None,
+        exclude_last_ms:  float = 0.0,        # don't label last N ms as 1 (Churchill: 30 ms for mitigation)
+        ignore_twarn:     bool   = False,     # if True, do not train on Twarn window (weight=0); learn boundary
     ):
         """
         Args:
@@ -150,6 +163,8 @@ class ECEiTCNDataset(Dataset):
         self.stride           = stride if stride is not None else nsub
         self.normalize        = normalize
         self.label_balance    = label_balance
+        self.exclude_last_ms  = exclude_last_ms
+        self.ignore_twarn    = ignore_twarn
 
         # ── check for pre-decimated data ──────────────────────────────
         self._use_decimated = False
@@ -170,6 +185,11 @@ class ECEiTCNDataset(Dataset):
         q = self.data_step if self._use_decimated else 1
         self.t_dis       = (self.meta['t_disruption'].values * 1000 / q).astype(int)
         self.disrupt_idx = self.t_dis - self.Twarn // q
+        exclude_samps   = int(self.exclude_last_ms * (1000 / q))  # ms → samples in data space
+        self.positive_end_idx = np.maximum(
+            self.disrupt_idx,
+            self.t_dis - exclude_samps,
+        ).astype(np.int64)  # end of "label 1" region (don't label last exclude_last_ms as 1)
         self.start_idx   = np.full(len(self.shots), self.baseline_length // q)
         self.stop_idx    = self.t_dis.copy()
 
@@ -317,6 +337,9 @@ class ECEiTCNDataset(Dataset):
         self.disrupt_idx = np.concatenate(
             [self.disrupt_idx, np.array(disrupt_list, dtype=np.int64)]
         )
+        self.positive_end_idx = np.concatenate(
+            [self.positive_end_idx, np.array(stop_list, dtype=np.int64)]
+        )
         self.t_dis = np.concatenate(
             [self.t_dis, np.array(stop_list, dtype=np.int64)]
         )
@@ -334,7 +357,7 @@ class ECEiTCNDataset(Dataset):
 
     def _build_subsequences(self):
         """Tile each shot into fixed-length windows (in data-file space)."""
-        shot_idx, starts, stops, d_local = [], [], [], []
+        shot_idx, starts, stops, d_local, e_local = [], [], [], [], []
         nsub   = self._data_nsub
         stride = self._data_stride
 
@@ -344,6 +367,7 @@ class ECEiTCNDataset(Dataset):
                 continue                          # shot too short
 
             d = int(self.disrupt_idx[s])          # absolute disrupt index
+            e_abs = int(self.positive_end_idx[s]) # end of "label 1" region
 
             pos = a
             while pos + nsub <= b:
@@ -354,10 +378,13 @@ class ECEiTCNDataset(Dataset):
                 # local disrupt offset inside this window
                 if d <= pos:
                     d_local.append(0)             # fully disruptive
+                    e_local.append(min(pos + nsub, e_abs) - pos)
                 elif d >= pos + nsub:
                     d_local.append(-1)            # fully clear
+                    e_local.append(0)
                 else:
                     d_local.append(d - pos)       # transition inside
+                    e_local.append(min(pos + nsub, e_abs) - pos)
 
                 pos += stride
 
@@ -369,16 +396,20 @@ class ECEiTCNDataset(Dataset):
                 stops.append(b)
                 if d <= last_start:
                     d_local.append(0)
+                    e_local.append(min(b, e_abs) - last_start)
                 elif d >= b:
                     d_local.append(-1)
+                    e_local.append(0)
                 else:
                     d_local.append(d - last_start)
+                    e_local.append(min(b, e_abs) - last_start)
 
-        self.seq_shot_idx     = np.array(shot_idx,  dtype=int)
-        self.seq_start        = np.array(starts,    dtype=int)
-        self.seq_stop         = np.array(stops,     dtype=int)
-        self.seq_disrupt_local = np.array(d_local,  dtype=int)
-        self.seq_has_disrupt  = self.seq_disrupt_local >= 0
+        self.seq_shot_idx        = np.array(shot_idx,  dtype=int)
+        self.seq_start           = np.array(starts,    dtype=int)
+        self.seq_stop            = np.array(stops,     dtype=int)
+        self.seq_disrupt_local   = np.array(d_local,  dtype=int)
+        self.seq_positive_end_local = np.array(e_local, dtype=int)
+        self.seq_has_disrupt     = self.seq_disrupt_local >= 0
 
     # ── class weights ─────────────────────────────────────────────────
 
@@ -398,15 +429,24 @@ class ECEiTCNDataset(Dataset):
         total_pos, total_neg = 0, 0
 
         dls = self.seq_disrupt_local if indices is None else self.seq_disrupt_local[indices]
-        for dl in dls:
+        els = self.seq_positive_end_local if indices is None else self.seq_positive_end_local[indices]
+        for dl, el in zip(dls, els):
             if dl < 0:
                 total_neg += T
+            elif self.ignore_twarn:
+                # Twarn window is masked; only pre-d timesteps count as neg
+                d = (dl + 1) // step
+                total_neg += d
             elif dl == 0:
-                total_pos += T
+                e = min((el + step - 1) // step, T)
+                total_pos += e
+                total_neg += T - e
             else:
                 d = (dl + 1) // step   # +1 matches label boundary in __getitem__
-                total_neg += d
-                total_pos += T - d
+                e = min((el + step - 1) // step, T)
+                e = max(d, e)
+                total_neg += d + (T - e)
+                total_pos += e - d
         total = total_pos + total_neg
         if self.label_balance == 'const' and total_pos > 0 and total_neg > 0:
             self.pos_weight = float(0.5 * total / total_pos)
@@ -537,11 +577,23 @@ class ECEiTCNDataset(Dataset):
         weight = np.full(T, self.neg_weight, dtype=np.float32)
 
         dl = int(self.seq_disrupt_local[index])
+        el = int(self.seq_positive_end_local[index])  # end of "1" region in data space
+        step = self._step_in_getitem
         if dl >= 0:
             # +1 matches disruptcnn: (disrupt_idxi - start_idxi + 1) / data_step
-            d = min((dl + 1) // self._step_in_getitem, T)
-            target[d:] = 1.0
-            weight[d:] = self.pos_weight
+            d = min((dl + 1) // step, T)
+            if self.ignore_twarn:
+                # Do not train on the Twarn window: mask it from loss (weight=0).
+                # Only "clear" (0) before the window is learned; boundary is not assumed.
+                weight[d:] = 0.0
+            else:
+                e = min((el + step - 1) // step, T)  # end of positive in output steps
+                e = max(d, e)  # ensure e >= d
+                target[d:e] = 1.0
+                weight[d:e] = self.pos_weight
+                # Excluded segment [e:T] (e.g. last 30 ms): leave target=0, weight=0 so no loss
+                if e < T:
+                    weight[e:] = 0.0
 
         return (torch.from_numpy(np.ascontiguousarray(X)),
                 torch.from_numpy(target),
