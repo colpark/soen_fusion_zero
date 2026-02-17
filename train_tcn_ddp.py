@@ -25,8 +25,16 @@ import numpy as np
 import torch
 import torch.multiprocessing
 # Use filesystem-based sharing instead of /dev/shm to avoid "Bus error"
-# on HPC nodes (e.g. Perlmutter) where shared memory is limited.
+# and "unable to allocate shared memory" on HPC nodes where /dev/shm is limited.
 torch.multiprocessing.set_sharing_strategy('file_system')
+
+
+def _worker_init_fn(worker_id: int) -> None:
+    """Ensure each DataLoader worker also uses file_system sharing (avoids shm exhaustion)."""
+    try:
+        torch.multiprocessing.set_sharing_strategy('file_system')
+    except RuntimeError:
+        pass  # already set
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
@@ -424,9 +432,8 @@ def parse_args():
                         'has ~1/4 the gradient updates of single-GPU)')
     g.add_argument('--batch-size', type=int, default=48,
                    help='Per-GPU batch size (default: 48, eff. 192 on 4 GPUs)')
-    g.add_argument('--num-workers', type=int, default=8,
-                   help='DataLoader workers per rank (default: 8; '
-                        'uses file_system sharing to avoid /dev/shm limits)')
+    g.add_argument('--num-workers', type=int, default=4,
+                   help='DataLoader workers per rank (default: 4; use 2 or 0 if shm errors)')
     g.add_argument('--optimizer', type=str, default='adamw',
                    choices=['adamw', 'sgd'],
                    help='Optimizer (default: adamw)')
@@ -543,7 +550,8 @@ def main():
         num_workers=args.num_workers,
         pin_memory=True,
         prefetch_factor=2,
-        persistent_workers=True,   # keep workers alive between epochs
+        persistent_workers=args.num_workers > 0,
+        worker_init_fn=_worker_init_fn if args.num_workers > 0 else None,
     )
 
     # ── Validation loader: distributed across ranks ──────────────────────
@@ -561,7 +569,8 @@ def main():
         pin_memory=True,
         drop_last=False,
         prefetch_factor=2,
-        persistent_workers=True,
+        persistent_workers=args.num_workers > 0,
+        worker_init_fn=_worker_init_fn if args.num_workers > 0 else None,
     )
 
     log(rank, f'  Train: {len(train_loader)} batches/rank  '
