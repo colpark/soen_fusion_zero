@@ -551,7 +551,7 @@ class ECEiTCNDataset(Dataset):
     def __len__(self):
         return len(self.seq_shot_idx)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index, _retry: int = 0):
         s    = int(self.seq_shot_idx[index])
         shot = self.shots[s]
         data_root = self._shot_data_root[s]
@@ -570,6 +570,10 @@ class ECEiTCNDataset(Dataset):
                         f['LFS'][..., :self.baseline_length], dtype=np.float32
                     )
         except (OSError, IOError) as e:
+            # Skip bad file (e.g. unsupported compression filter); try another sample
+            if _retry < 20:
+                alt_idx = (index + _retry + 1) % len(self)
+                return self.__getitem__(alt_idx, _retry=_retry + 1)
             raise RuntimeError(
                 f'HDF5 read failed for shot {shot} ({data_root / f"{shot}.h5"}): {e}. '
                 'File may use an unsupported compression filter.'
