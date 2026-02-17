@@ -481,24 +481,26 @@ class ECEiTCNDataset(Dataset):
                 a, b = a * step, b * step
             try:
                 with h5py.File(data_root / f'{shot}.h5', 'r') as f:
-                    chunk = f['LFS'][..., a:b]
+                    chunk = np.asarray(f['LFS'][..., a:b], dtype=np.float64)
                     if step > 1:
-                        baseline = f['LFS'][..., :self.baseline_length]
-            except OSError as e:
-                # e.g. "filter returned failure during read" on compressed HDF5
+                        baseline = np.asarray(f['LFS'][..., :self.baseline_length], dtype=np.float64)
+            except (OSError, IOError) as e:
                 print(f'[ECEiTCNDataset] Skipping shot {shot} for norm stats: {e}')
                 continue
 
-            if step == 1:
-                data = chunk.astype(np.float64)
-            else:
-                offset = np.mean(baseline, axis=-1, keepdims=True)
-                data = (chunk - offset)[..., ::step].astype(np.float64)
-
-            T = data.shape[-1]
-            running_sum    += data.sum(axis=-1)
-            running_sq_sum += (data ** 2).sum(axis=-1)
-            n_total += T
+            try:
+                if step == 1:
+                    data = chunk
+                else:
+                    offset = np.mean(baseline, axis=-1, keepdims=True)
+                    data = (chunk - offset)[..., ::step].astype(np.float64)
+                T = data.shape[-1]
+                running_sum    += data.sum(axis=-1)
+                running_sq_sum += (data ** 2).sum(axis=-1)
+                n_total += T
+            except (OSError, IOError) as e:
+                print(f'[ECEiTCNDataset] Skipping shot {shot} for norm stats (after read): {e}')
+                continue
 
         if n_total == 0:
             raise RuntimeError('Norm stats: no shots could be read (all failed with OSError)')
