@@ -1,0 +1,11 @@
+# Requirements for CIFAR-10 JEPA experiments
+# Install: pip install -r requirements.txt
+
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.21.0
+pyyaml>=5.4
+
+# Optional: Mamba encoder for NF+JEPA (requires CUDA >= 11.6)
+# pip install mamba-ssm>=1.2.0
+# If mamba-ssm is not installed, the code falls back to a Transformer encoder.

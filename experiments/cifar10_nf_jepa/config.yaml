@@ -1,0 +1,52 @@
+# CIFAR-10 NF+JEPA configuration
+# Mamba-GINR-style neural field encoder with JEPA predictive loss.
+
+# --- Data ---
+data_root: ./data
+batch_size: 128
+num_workers: 4
+img_size: 32
+
+# --- Sparse observation ---
+obs_frac: 0.1           # 10% of pixels observed by context encoder (~102 pixels)
+target_frac: 0.2         # 20% of pixels as prediction targets (~204 pixels)
+exclude_context: true     # target set excludes context pixels
+
+# --- Model ---
+d_model: 192
+n_layers: 4              # Mamba (or Transformer) layers
+num_freqs: 32            # Fourier frequency bands for coord embedding
+use_mamba: true           # set false for Transformer fallback
+nhead: 4                  # heads for fallback Transformer / predictor cross-attn
+
+# --- Predictor ---
+pred_dim: 96
+pred_layers: 3
+pred_mode: cross_attn     # 'cross_attn' (target tokens attend to context) or 'pool'
+
+# --- INR Decoder (optional reconstruction) ---
+use_inr_decoder: true
+inr_hidden: 256
+inr_layers: 4
+
+# --- Loss ---
+jepa_weight: 1.0
+recon_weight: 0.1         # set to 0.0 for JEPA-only (no reconstruction)
+jepa_loss_type: mse       # 'mse' or 'cosine'
+
+# --- Optimization ---
+epochs: 200
+lr: 1.0e-3
+start_lr: 1.0e-4
+final_lr: 1.0e-6
+warmup: 10
+weight_decay: 0.05
+ema_start: 0.996
+ema_end: 1.0
+use_amp: false
+
+# --- Logging ---
+log_freq: 50
+checkpoint_freq: 10
+output_dir: ./output/cifar10_nf_jepa
+seed: 42
