@@ -43,7 +43,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.utils.parametrizations import weight_norm
 from torch.utils.data import DataLoader, Subset
 
-from dataset_ecei_tcn import ECEiTCNDataset, StratifiedBatchSampler
+from dataset_ecei_tcn import ECEiTCNDataset, PrebuiltSubseqDataset, StratifiedBatchSampler
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -414,6 +414,8 @@ def parse_args():
                    help='Do not train on the Twarn window (weight=0); learn disruptive vs clear from data')
     g.add_argument('--baseline-len', type=int, default=40_000)
     g.add_argument('--nsub', type=int, default=781_250)
+    g.add_argument('--prebuilt-subseq-dir', type=str, default=None,
+                   help='Use pre-saved subsequence .npz from preprocess_subseqs.py (avoids shm)')
 
     # ── model ──
     g = p.add_argument_group('model')
@@ -502,50 +504,69 @@ def main():
     model = DDP(model, device_ids=[local_rank])
 
     # ── Dataset ──────────────────────────────────────────────────────────
-    ds = ECEiTCNDataset(
-        root=args.root,
-        decimated_root=args.decimated_root,
-        clear_root=args.clear_root,
-        clear_decimated_root=args.clear_decimated_root,
-        Twarn=args.twarn,
-        exclude_last_ms=args.exclude_last_ms,
-        ignore_twarn=args.ignore_twarn,
-        baseline_length=args.baseline_len,
-        data_step=args.data_step,
-        nsub=args.nsub,
-        stride=stride,
-        normalize=True,
-    )
-    if rank == 0:
-        ds.summary()
+    if args.prebuilt_subseq_dir:
+        train_ds = PrebuiltSubseqDataset(args.prebuilt_subseq_dir, split='train')
+        val_ds = PrebuiltSubseqDataset(args.prebuilt_subseq_dir, split='test')
+        if rank == 0:
+            log(rank, f'  Prebuilt subseqs: train={len(train_ds)}, test={len(val_ds)}')
+        ds = train_ds  # for class-weight log; train_loader uses train_ds
+        train_idx = np.arange(len(train_ds))
+        val_idx = np.arange(len(val_ds))
+    else:
+        ds = ECEiTCNDataset(
+            root=args.root,
+            decimated_root=args.decimated_root,
+            clear_root=args.clear_root,
+            clear_decimated_root=args.clear_decimated_root,
+            Twarn=args.twarn,
+            exclude_last_ms=args.exclude_last_ms,
+            ignore_twarn=args.ignore_twarn,
+            baseline_length=args.baseline_len,
+            data_step=args.data_step,
+            nsub=args.nsub,
+            stride=stride,
+            normalize=True,
+        )
+        if rank == 0:
+            ds.summary()
+        train_idx = ds.get_split_indices('train')
+        val_idx = ds.get_split_indices('test')
+        if len(val_idx) == 0:
+            val_idx = ds.get_split_indices('val')
+        train_ds = ds
+        val_ds = ds
 
     # ── Training loader: distributed stratified batches ──────────────────
-    train_idx = ds.get_split_indices('train')
+    data_for_train = train_ds
     train_sampler = DistributedStratifiedBatchSampler(
-        labels=ds.seq_has_disrupt.astype(int),
+        labels=data_for_train.seq_has_disrupt.astype(int),
         indices=train_idx,
         batch_size=args.batch_size,
         rank=rank,
         world_size=world_size,
     )
 
-    # Recompute class weights from effectively balanced pool (same as
-    # the notebook / create_loaders logic)
-    n_pos = len(train_sampler.pos_idx)
-    n_neg = len(train_sampler.neg_idx)
-    n_eff = min(n_pos, n_neg)
-    eff_indices = np.concatenate([
-        train_sampler.pos_idx[:n_eff],
-        train_sampler.neg_idx[:n_eff],
-    ])
-    old_pw, old_nw = ds.pos_weight, ds.neg_weight
-    ds._compute_class_weights(indices=eff_indices)
-    log(rank, f'  Class weights (after stratified balance):')
-    log(rank, f'    before: pw={old_pw:.4f} nw={old_nw:.4f}')
-    log(rank, f'    after : pw={ds.pos_weight:.4f} nw={ds.neg_weight:.4f}')
+    if not args.prebuilt_subseq_dir:
+        n_pos = len(train_sampler.pos_idx)
+        n_neg = len(train_sampler.neg_idx)
+        n_eff = min(n_pos, n_neg)
+        eff_indices = np.concatenate([
+            train_sampler.pos_idx[:n_eff],
+            train_sampler.neg_idx[:n_eff],
+        ])
+        old_pw, old_nw = ds.pos_weight, ds.neg_weight
+        ds._compute_class_weights(indices=eff_indices)
+        log(rank, f'  Class weights (after stratified balance):')
+        log(rank, f'    before: pw={old_pw:.4f} nw={old_nw:.4f}')
+        log(rank, f'    after : pw={ds.pos_weight:.4f} nw={ds.neg_weight:.4f}')
+
+    # Force num_workers=0 to avoid "unable to allocate shared memory" on HPC (e.g. SciServer)
+    if args.num_workers > 0:
+        log(rank, f'  Forcing num_workers=0 (was {args.num_workers}) to avoid /dev/shm errors')
+        args.num_workers = 0
 
     train_loader = DataLoader(
-        ds,
+        data_for_train,
         batch_sampler=train_sampler,
         num_workers=args.num_workers,
         pin_memory=True,
@@ -555,10 +576,7 @@ def main():
     )
 
     # ── Validation loader: distributed across ranks ──────────────────────
-    val_idx = ds.get_split_indices('test')
-    if len(val_idx) == 0:
-        val_idx = ds.get_split_indices('val')
-    val_subset = Subset(ds, val_idx)
+    val_subset = Subset(val_ds, val_idx)
     val_sampler = torch.utils.data.distributed.DistributedSampler(
         val_subset, shuffle=False)
     val_loader = DataLoader(

@@ -627,6 +627,52 @@ class ECEiTCNDataset(Dataset):
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  Prebuilt subsequence dataset — load from preprocess_subseqs.py output
+# ══════════════════════════════════════════════════════════════════════
+
+class PrebuiltSubseqDataset(Dataset):
+    """
+    Dataset that loads pre-saved subsequence .npz files (from preprocess_subseqs.py).
+
+    Each sample is one .npz with keys X, target, weight. No HDF5 or tiling at
+    load time, so DataLoader has minimal shared-memory pressure.
+    """
+
+    def __init__(self, root: str | Path, split: str = "train"):
+        self.root = Path(root)
+        self.split = split
+        self.subdir = self.root / split
+        if not self.subdir.exists():
+            raise FileNotFoundError(f"Prebuilt subseq dir not found: {self.subdir}")
+        self._files = sorted(
+            [p for p in self.subdir.glob("*.npz") if p.stem != "labels"],
+            key=lambda p: int(p.stem),
+        )
+        labels_path = self.subdir / "labels.npy"
+        self.seq_has_disrupt = np.load(labels_path) if labels_path.exists() else np.ones(len(self._files), dtype=np.int64)
+        self.pos_weight = 1.0
+        self.neg_weight = 1.0
+
+    def __len__(self) -> int:
+        return len(self._files)
+
+    def __getitem__(self, index: int):
+        data = np.load(self._files[index])
+        X = data["X"]
+        target = data["target"]
+        weight = data["weight"]
+        return (
+            torch.from_numpy(np.ascontiguousarray(X)),
+            torch.from_numpy(target),
+            torch.from_numpy(weight),
+        )
+
+    def get_split_indices(self, split: str) -> np.ndarray:
+        """Return indices for this split (this dataset is already one split)."""
+        return np.arange(len(self)) if split == self.split else np.array([], dtype=np.int64)
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  Stratified batch sampler — balanced pos/neg in every batch
 # ══════════════════════════════════════════════════════════════════════
 
