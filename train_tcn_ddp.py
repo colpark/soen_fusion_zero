@@ -560,11 +560,6 @@ def main():
         log(rank, f'    before: pw={old_pw:.4f} nw={old_nw:.4f}')
         log(rank, f'    after : pw={ds.pos_weight:.4f} nw={ds.neg_weight:.4f}')
 
-    # Force num_workers=0 to avoid "unable to allocate shared memory" on HPC (e.g. SciServer)
-    if args.num_workers > 0:
-        log(rank, f'  Forcing num_workers=0 (was {args.num_workers}) to avoid /dev/shm errors')
-        args.num_workers = 0
-
     train_kw = dict(
         batch_sampler=train_sampler,
         num_workers=args.num_workers,
