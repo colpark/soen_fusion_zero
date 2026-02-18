@@ -400,11 +400,11 @@ def parse_args():
     g.add_argument('--decimated-root', type=str,
                    default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/dsrpt_decimated')
     g.add_argument('--clear-root', type=str,
-                   default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/clear',
-                   help='Directory with non-disruptive shots (whole shot = clear)')
+                   default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/clear_decimated',
+                   help='Directory with non-disruptive shots (meta + .h5); use clear_decimated to load pre-decimated')
     g.add_argument('--clear-decimated-root', type=str,
                    default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/clear_decimated',
-                   help='Pre-decimated clear shots (optional)')
+                   help='Pre-decimated clear shots (same as clear-root => use decimated clear)')
     g.add_argument('--data-step', type=int, default=10)
     g.add_argument('--twarn', type=int, default=300_000,
                    help='Label as disruptive within this many samples (1 MHz) before t_disrupt (300_000 = 300 ms)')

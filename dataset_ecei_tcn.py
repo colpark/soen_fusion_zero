@@ -349,8 +349,13 @@ class ECEiTCNDataset(Dataset):
         self.meta = pd.DataFrame(
             {"shot": self.shots, "split": self.splits, "t_disruption": self.t_dis * q / 1000}
         )
+        clear_source = (
+            clear_decimated_root
+            if (use_clear_decimated and self._use_decimated)
+            else clear_root
+        )
         print(
-            f"[ECEiTCNDataset] Added {n_clear} non-disruptive (clear) shots from {clear_root}"
+            f"[ECEiTCNDataset] Added {n_clear} non-disruptive (clear) shots from {clear_source}"
         )
 
     # ── subsequence tiling ────────────────────────────────────────────
