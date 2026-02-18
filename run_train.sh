@@ -7,6 +7,7 @@
 #      bash run_train.sh --lr 0.5 --optimizer sgd   # match disruptcnn
 #      bash run_train.sh --batch-size 24             # smaller per GPU
 #      bash run_train.sh --resume checkpoints_tcn_ddp/last.pt
+#      bash run_train.sh --prebuilt-subseq-dir subseqs  # use mmap prebuilt (recommended)
 #      bash run_train.sh --clear-root /path/to/clear   # non-disruptive shots (optional)
 #
 #  Default data paths (SciServer): dsrpt + clear under

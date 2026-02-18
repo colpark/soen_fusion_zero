@@ -565,31 +565,33 @@ def main():
         log(rank, f'  Forcing num_workers=0 (was {args.num_workers}) to avoid /dev/shm errors')
         args.num_workers = 0
 
-    train_loader = DataLoader(
-        data_for_train,
+    train_kw = dict(
         batch_sampler=train_sampler,
         num_workers=args.num_workers,
         pin_memory=True,
-        prefetch_factor=2,
-        persistent_workers=args.num_workers > 0,
-        worker_init_fn=_worker_init_fn if args.num_workers > 0 else None,
     )
+    if args.num_workers > 0:
+        train_kw["prefetch_factor"] = 2
+        train_kw["persistent_workers"] = True
+        train_kw["worker_init_fn"] = _worker_init_fn
+    train_loader = DataLoader(data_for_train, **train_kw)
 
     # ── Validation loader: distributed across ranks ──────────────────────
     val_subset = Subset(val_ds, val_idx)
     val_sampler = torch.utils.data.distributed.DistributedSampler(
         val_subset, shuffle=False)
-    val_loader = DataLoader(
-        val_subset,
+    val_kw = dict(
         batch_size=args.batch_size,
         sampler=val_sampler,
         num_workers=args.num_workers,
         pin_memory=True,
         drop_last=False,
-        prefetch_factor=2,
-        persistent_workers=args.num_workers > 0,
-        worker_init_fn=_worker_init_fn if args.num_workers > 0 else None,
     )
+    if args.num_workers > 0:
+        val_kw["prefetch_factor"] = 2
+        val_kw["persistent_workers"] = True
+        val_kw["worker_init_fn"] = _worker_init_fn
+    val_loader = DataLoader(val_subset, **val_kw)
 
     log(rank, f'  Train: {len(train_loader)} batches/rank  '
               f'({len(train_idx)} subseqs total)')
