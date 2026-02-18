@@ -207,26 +207,42 @@ def compute_labels_and_weights(
     return target, weight
 
 
-def main():
-    args = parse_args()
-    root = Path(args.root)
-    decimated_root = Path(args.decimated_root) if args.decimated_root else None
-    clear_root = Path(args.clear_root) if args.clear_root else None
-    clear_decimated_root = Path(args.clear_decimated_root) if args.clear_decimated_root else None
-    out_dir = Path(args.output_dir)
-    norm_path = Path(args.norm_stats)
+def run_preprocess(
+    output_dir: str | Path,
+    root: str | Path,
+    decimated_root: str | Path | None = None,
+    clear_root: str | Path | None = None,
+    clear_decimated_root: str | Path | None = None,
+    norm_stats: str | Path = "norm_stats.npz",
+    nsub: int = 781_250,
+    stride: int = 481_090,
+    twarn: int = 300_000,
+    baseline_length: int = 40_000,
+    data_step: int = 10,
+    exclude_last_ms: float = 0.0,
+    ignore_twarn: bool = False,
+    format_mode: str = "mmap",
+    mmap_batch_size: int = 512,
+) -> None:
+    """Run subsequence preprocessing in-process. Call from notebook or script with same options as CLI."""
+    root = Path(root)
+    decimated_root = Path(decimated_root) if decimated_root else None
+    clear_root = Path(clear_root) if clear_root else None
+    clear_decimated_root = Path(clear_decimated_root) if clear_decimated_root else None
+    out_dir = Path(output_dir)
+    norm_path = Path(norm_stats)
     if not norm_path.exists():
         raise FileNotFoundError(f"Norm stats not found: {norm_path}. Run dataset once with normalize=True to create it.")
 
     use_decimated = decimated_root is not None and decimated_root.exists()
-    q = args.data_step if use_decimated else 1
-    step_in = 1 if use_decimated else args.data_step
-    T_sub = args.nsub // args.data_step
+    q = data_step if use_decimated else 1
+    step_in = 1 if use_decimated else data_step
+    T_sub = nsub // data_step
 
     print("Building shot metadata...")
     shots, splits, start_idx, stop_idx, disrupt_idx, positive_end_idx, shot_data_root, shot_step, _ = build_shot_metadata(
         root, decimated_root, clear_root, clear_decimated_root,
-        args.twarn, args.baseline_length, args.data_step, args.exclude_last_ms,
+        twarn, baseline_length, data_step, exclude_last_ms,
     )
     n_shots = len(shots)
     print(f"  Shots: {n_shots}")
@@ -234,7 +250,7 @@ def main():
     print("Building subsequence index...")
     seq_shot_idx, seq_start, seq_stop, seq_disrupt_local, seq_positive_end_local = build_subsequence_index(
         n_shots, start_idx, stop_idx, disrupt_idx, positive_end_idx,
-        args.nsub, args.stride, q,
+        nsub, stride, q,
     )
     n_subseqs = len(seq_shot_idx)
     print(f"  Subsequences: {n_subseqs}")
@@ -257,10 +273,10 @@ def main():
     (out_dir / "train").mkdir(exist_ok=True)
     (out_dir / "test").mkdir(exist_ok=True)
 
-    meta_out = {"nsub": args.nsub, "data_step": args.data_step, "T_sub": T_sub, "format": args.format}
-    use_mmap = args.format == "mmap" and _HAS_MMAP_NINJA
-    if args.format == "mmap" and not _HAS_MMAP_NINJA:
-        raise RuntimeError("--format mmap requires mmap_ninja; install with: pip install mmap_ninja")
+    meta_out = {"nsub": nsub, "data_step": data_step, "T_sub": T_sub, "format": format_mode}
+    use_mmap = format_mode == "mmap" and _HAS_MMAP_NINJA
+    if format_mode == "mmap" and not _HAS_MMAP_NINJA:
+        raise RuntimeError("format_mode='mmap' requires mmap_ninja; install with: pip install mmap_ninja")
 
     for split_name, indices in split_indices.items():
         if len(indices) == 0:
@@ -270,7 +286,7 @@ def main():
         subdir = out_dir / split_name
         subdir.mkdir(exist_ok=True)
         labels_split = []
-        batch_size = args.mmap_batch_size if use_mmap else 1
+        batch_size = mmap_batch_size if use_mmap else 1
         X_batch, target_batch, weight_batch = [], [], []
         mmap_initialized = False
 
@@ -308,14 +324,14 @@ def main():
             with h5py.File(data_root / f"{shot}.h5", "r") as f:
                 X = np.asarray(f["LFS"][..., start_raw:stop_raw], dtype=np.float32)
                 if step > 1:
-                    bl = np.asarray(f["LFS"][..., :args.baseline_length], dtype=np.float32)
+                    bl = np.asarray(f["LFS"][..., :baseline_length], dtype=np.float32)
                     X = (X - np.mean(bl, axis=-1, keepdims=True))[..., ::step]
 
             X = (X - norm_mean[..., np.newaxis]) / norm_std[..., np.newaxis]
             dl = int(seq_disrupt_local[global_idx])
             el = int(seq_positive_end_local[global_idx])
             target, weight = compute_labels_and_weights(
-                T_sub, dl, el, step_in, args.ignore_twarn,
+                T_sub, dl, el, step_in, ignore_twarn,
             )
             has_disrupt = 1 if dl >= 0 else 0
             labels_split.append(has_disrupt)
@@ -340,6 +356,28 @@ def main():
     with open(out_dir / "meta.json", "w") as f:
         json.dump(meta_out, f, indent=2)
     print(f"Saved to {out_dir}; meta: {meta_out}")
+
+
+def main():
+    """CLI entry point: parse args and run in a subprocess environment."""
+    args = parse_args()
+    run_preprocess(
+        output_dir=args.output_dir,
+        root=args.root,
+        decimated_root=args.decimated_root or None,
+        clear_root=args.clear_root or None,
+        clear_decimated_root=args.clear_decimated_root or None,
+        norm_stats=args.norm_stats,
+        nsub=args.nsub,
+        stride=args.stride,
+        twarn=args.twarn,
+        baseline_length=args.baseline_length,
+        data_step=args.data_step,
+        exclude_last_ms=args.exclude_last_ms,
+        ignore_twarn=args.ignore_twarn,
+        format_mode=args.format,
+        mmap_batch_size=args.mmap_batch_size,
+    )
 
 
 if __name__ == "__main__":
