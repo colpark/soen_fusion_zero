@@ -432,8 +432,8 @@ def parse_args():
                         'has ~1/4 the gradient updates of single-GPU)')
     g.add_argument('--batch-size', type=int, default=48,
                    help='Per-GPU batch size (default: 48, eff. 192 on 4 GPUs)')
-    g.add_argument('--num-workers', type=int, default=4,
-                   help='DataLoader workers per rank (default: 4; use 2 or 0 if shm errors)')
+    g.add_argument('--num-workers', type=int, default=0,
+                   help='DataLoader workers per rank (default: 0 to avoid shm; use 2–4 if /dev/shm is large)')
     g.add_argument('--optimizer', type=str, default='adamw',
                    choices=['adamw', 'sgd'],
                    help='Optimizer (default: adamw)')
