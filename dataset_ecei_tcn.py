@@ -59,6 +59,11 @@ from pathlib import Path
 from tqdm import tqdm
 from typing import Optional, Tuple, Dict, List
 
+try:
+    from mmap_ninja import RaggedMmap as _RaggedMmap
+except ImportError:
+    _RaggedMmap = None
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  Standalone helpers – useful for visualisation outside the Dataset
@@ -632,10 +637,11 @@ class ECEiTCNDataset(Dataset):
 
 class PrebuiltSubseqDataset(Dataset):
     """
-    Dataset that loads pre-saved subsequence .npz files (from preprocess_subseqs.py).
+    Dataset that loads pre-saved subsequence data (from preprocess_subseqs.py).
 
-    Each sample is one .npz with keys X, target, weight. No HDF5 or tiling at
-    load time, so DataLoader has minimal shared-memory pressure.
+    Supports two formats (auto-detected from the split directory):
+    - mmap: RaggedMmap dirs X/, target/, weight/ — fast random access, no per-sample file open.
+    - npz:  One .npz per sample with keys X, target, weight (legacy).
     """
 
     def __init__(self, root: str | Path, split: str = "train"):
@@ -644,25 +650,45 @@ class PrebuiltSubseqDataset(Dataset):
         self.subdir = self.root / split
         if not self.subdir.exists():
             raise FileNotFoundError(f"Prebuilt subseq dir not found: {self.subdir}")
-        self._files = sorted(
-            [p for p in self.subdir.glob("*.npz") if p.stem != "labels"],
-            key=lambda p: int(p.stem),
-        )
+        x_dir = self.subdir / "X"
+        if x_dir.is_dir():
+            if _RaggedMmap is None:
+                raise ImportError("Prebuilt subseq data is in mmap format; install mmap_ninja: pip install mmap_ninja")
+            self._use_mmap = True
+        else:
+            self._use_mmap = False
+        if self._use_mmap:
+            self._X_mmap = _RaggedMmap(str(x_dir))
+            self._target_mmap = _RaggedMmap(str(self.subdir / "target"))
+            self._weight_mmap = _RaggedMmap(str(self.subdir / "weight"))
+            self._n = len(self._X_mmap)
+            self._files = []
+        else:
+            self._files = sorted(
+                [p for p in self.subdir.glob("*.npz") if p.stem != "labels"],
+                key=lambda p: int(p.stem) if p.stem.isdigit() else 0,
+            )
+            self._n = len(self._files)
         labels_path = self.subdir / "labels.npy"
-        self.seq_has_disrupt = np.load(labels_path) if labels_path.exists() else np.ones(len(self._files), dtype=np.int64)
+        self.seq_has_disrupt = np.load(labels_path) if labels_path.exists() else np.ones(self._n, dtype=np.int64)
         self.pos_weight = 1.0
         self.neg_weight = 1.0
 
     def __len__(self) -> int:
-        return len(self._files)
+        return self._n
 
     def __getitem__(self, index: int):
-        data = np.load(self._files[index])
-        X = data["X"]
-        target = data["target"]
-        weight = data["weight"]
+        if self._use_mmap:
+            X = np.ascontiguousarray(self._X_mmap[index])
+            target = self._target_mmap[index]
+            weight = self._weight_mmap[index]
+        else:
+            data = np.load(self._files[index])
+            X = np.ascontiguousarray(data["X"])
+            target = data["target"]
+            weight = data["weight"]
         return (
-            torch.from_numpy(np.ascontiguousarray(X)),
+            torch.from_numpy(X),
             torch.from_numpy(target),
             torch.from_numpy(weight),
         )

@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-Preprocess ECEi data to subsequence-level .npz files.
+Preprocess ECEi data to subsequence-level files (.npz or mmap_ninja).
 
 Reads from decimated shot-level HDF5 (dsrpt_decimated, clear_decimated),
 builds the same subsequence windows as ECEiTCNDataset, applies normalization,
-and saves one .npz per subsequence under output_dir/train/ and output_dir/test/.
-Training can then use PrebuiltSubseqDataset to load single files (no shared
-memory pressure from loading multiple shots per batch).
+and saves under output_dir/train/ and output_dir/test/. With --format mmap (default),
+uses mmap_ninja RaggedMmap for fast random access during training; with --format npz
+writes one .npz per subsequence (slower load, backward compatible).
 
 Usage:
   python preprocess_subseqs.py --output-dir subseqs [OPTIONS]
+  python preprocess_subseqs.py --output-dir subseqs --format npz  # legacy
 
 Requires norm_stats.npz (run ECEiTCNDataset once with normalize=True to create it).
+Requires mmap_ninja for --format mmap: pip install mmap_ninja
 """
 
 from __future__ import annotations
@@ -25,6 +27,12 @@ import h5py
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
+try:
+    from mmap_ninja import RaggedMmap
+    _HAS_MMAP_NINJA = True
+except ImportError:
+    _HAS_MMAP_NINJA = False
 
 
 def parse_args():
@@ -42,6 +50,10 @@ def parse_args():
     p.add_argument("--data-step", type=int, default=10)
     p.add_argument("--exclude-last-ms", type=float, default=0.0)
     p.add_argument("--ignore-twarn", action="store_true")
+    p.add_argument("--format", choices=("mmap", "npz"), default="mmap",
+                   help="Output format: mmap (fast load via mmap_ninja) or npz (one file per sample)")
+    p.add_argument("--mmap-batch-size", type=int, default=512,
+                   help="Batch size for flushing to mmap (only for --format mmap)")
     return p.parse_args()
 
 
@@ -245,7 +257,10 @@ def main():
     (out_dir / "train").mkdir(exist_ok=True)
     (out_dir / "test").mkdir(exist_ok=True)
 
-    meta_out = {"nsub": args.nsub, "data_step": args.data_step, "T_sub": T_sub}
+    meta_out = {"nsub": args.nsub, "data_step": args.data_step, "T_sub": T_sub, "format": args.format}
+    use_mmap = args.format == "mmap" and _HAS_MMAP_NINJA
+    if args.format == "mmap" and not _HAS_MMAP_NINJA:
+        raise RuntimeError("--format mmap requires mmap_ninja; install with: pip install mmap_ninja")
 
     for split_name, indices in split_indices.items():
         if len(indices) == 0:
@@ -255,6 +270,30 @@ def main():
         subdir = out_dir / split_name
         subdir.mkdir(exist_ok=True)
         labels_split = []
+        batch_size = args.mmap_batch_size if use_mmap else 1
+        X_batch, target_batch, weight_batch = [], [], []
+        mmap_initialized = False
+
+        def flush_mmap():
+            nonlocal mmap_initialized
+            if not X_batch:
+                return
+            if not mmap_initialized:
+                RaggedMmap.from_lists(str(subdir / "X"), X_batch)
+                RaggedMmap.from_lists(str(subdir / "target"), target_batch)
+                RaggedMmap.from_lists(str(subdir / "weight"), weight_batch)
+                mmap_initialized = True
+            else:
+                x_m = RaggedMmap(str(subdir / "X"))
+                x_m.extend(X_batch)
+                t_m = RaggedMmap(str(subdir / "target"))
+                t_m.extend(target_batch)
+                w_m = RaggedMmap(str(subdir / "weight"))
+                w_m.extend(weight_batch)
+            X_batch.clear()
+            target_batch.clear()
+            weight_batch.clear()
+
         for local_i, global_idx in enumerate(tqdm(indices, desc=f"Writing {split_name}")):
             s = int(seq_shot_idx[global_idx])
             shot = int(shots[s])
@@ -280,12 +319,23 @@ def main():
             )
             has_disrupt = 1 if dl >= 0 else 0
             labels_split.append(has_disrupt)
-            np.savez_compressed(
-                subdir / f"{local_i}.npz",
-                X=X.astype(np.float32),
-                target=target,
-                weight=weight.astype(np.float32),
-            )
+
+            if use_mmap:
+                X_batch.append(X.astype(np.float32))
+                target_batch.append(target)
+                weight_batch.append(weight.astype(np.float32))
+                if len(X_batch) >= batch_size:
+                    flush_mmap()
+            else:
+                np.savez_compressed(
+                    subdir / f"{local_i}.npz",
+                    X=X.astype(np.float32),
+                    target=target,
+                    weight=weight.astype(np.float32),
+                )
+
+        if use_mmap:
+            flush_mmap()
         np.save(subdir / "labels.npy", np.array(labels_split, dtype=np.int64))
     with open(out_dir / "meta.json", "w") as f:
         json.dump(meta_out, f, indent=2)
