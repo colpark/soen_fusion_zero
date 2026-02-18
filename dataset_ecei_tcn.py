@@ -674,6 +674,11 @@ class PrebuiltSubseqDataset(Dataset):
         self.pos_weight = 1.0
         self.neg_weight = 1.0
 
+    @property
+    def format(self) -> str:
+        """'mmap' or 'npz' — which format is being used for loading."""
+        return "mmap" if self._use_mmap else "npz"
+
     def __len__(self) -> int:
         return self._n
 
