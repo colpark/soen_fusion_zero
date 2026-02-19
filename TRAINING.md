@@ -70,7 +70,25 @@ torchrun --standalone --nproc_per_node=4 train_tcn_ddp.py \
 
 ---
 
-## 4. Paths on SciServer
+## 4. Why training can fail: loss weighting
+
+Training can become effectively **not trainable** (accuracy stuck near the positive-class fraction, model predicts 1 almost everywhere) if the **BCE loss is over-weighted on the positive class**.
+
+**What goes wrong**
+
+- The dataset can supply per-timestep weights (e.g. `pos_weight` / `neg_weight` from stratified balance, so positives get weight ~4–5 and negatives ~0.5).
+- The training loop also has a **per-batch** reweighting (`batch_weights(tgt_v)`) that gives roughly 50–50 total weight to positives vs negatives in the batch.
+- If **both** are applied in the loss, i.e. `weight = dataset_weight * batch_weights(target)`, then the **effective** weight on positive timesteps is much larger than on negatives (e.g. 4.5 × 2.8 vs 0.56 × 0.6). The loss is then dominated by positive timesteps.
+- The optimizer minimizes loss mainly by getting positives right, so the model is pushed to **predict 1 everywhere**. Accuracy plateaus around the positive fraction (e.g. ~18%), gradients shrink after clipping, and the model does not learn a useful decision boundary.
+
+**Correct approach (current code)**
+
+- Use **one** source of balancing only. This code uses **only** `batch_weights(tgt_v)` in the loss; the dataset’s third element (weight) is **not** used in the loss. So we get a single, per-batch 50–50 balance and training remains stable.
+- If you later use **dataset** weights (e.g. for Twarn masking or exclude_last), do **not** multiply them by `batch_weights` in the same loss. Either: use dataset weights alone, or use `batch_weights` alone.
+
+---
+
+## 5. Paths on SciServer
 
 If prebuilt data lives under scratch:
 ```bash
