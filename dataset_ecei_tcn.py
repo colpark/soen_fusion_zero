@@ -54,6 +54,15 @@ Per-timestep binary (when ignore_twarn=False):
   t_disrupt from the positive class (Churchill et al.: mitigation timing);
   when we extend to end of shot, positive_end_idx = T_shot overrides that.
 When ignore_twarn=True: the positive window is masked from loss (weight=0).
+
+End of shot and tiling
+---------------------
+End of shot is the full length of the LFS array in HDF5 (T_shot = LFS.shape[-1]).
+No cutting: we use the whole file; stop_idx = T_shot, positive_end_idx = T_shot.
+We create a window at every stride position: [pos, min(pos+nsub, b)]. So we do
+not discard the last stretch: partial end windows (length < nsub) are padded to
+nsub with zeros and the padded timesteps get weight=0 so they do not contribute
+to the loss. Thus every stride position is used and no data at the end is discarded.
 Shots from root are disruptive; optional clear_root adds non-disruptive shots (whole shot = clear).
 """
 
@@ -389,53 +398,41 @@ class ECEiTCNDataset(Dataset):
     # ── subsequence tiling ────────────────────────────────────────────
 
     def _build_subsequences(self):
-        """Tile each shot into fixed-length windows (in data-file space)."""
+        """Tile each shot into windows of at most nsub samples (data space).
+        Full windows: [pos, pos+nsub]. Partial end windows: [pos, b] when pos+nsub > b,
+        so we do not discard the last stretch; __getitem__ pads partial windows and masks padding (weight=0).
+        """
         shot_idx, starts, stops, d_local, e_local = [], [], [], [], []
         nsub   = self._data_nsub
         stride = self._data_stride
 
         for s in range(len(self.shots)):
             a, b = int(self.start_idx[s]), int(self.stop_idx[s])
-            if b - a < nsub:
-                continue                          # shot too short
+            if b - a < 1:
+                continue
 
             d = int(self.disrupt_idx[s])          # absolute disrupt index
             e_abs = int(self.positive_end_idx[s]) # end of "label 1" region
 
             pos = a
-            while pos + nsub <= b:
+            while pos < b:
+                stop = min(pos + nsub, b)
                 shot_idx.append(s)
                 starts.append(pos)
-                stops.append(pos + nsub)
+                stops.append(stop)
 
-                # local disrupt offset inside this window
+                # local disrupt offset inside this window (stop may be < pos+nsub for partial end window)
                 if d <= pos:
                     d_local.append(0)             # fully disruptive
-                    e_local.append(min(pos + nsub, e_abs) - pos)
-                elif d >= pos + nsub:
+                    e_local.append(min(stop, e_abs) - pos)
+                elif d >= stop:
                     d_local.append(-1)            # fully clear
                     e_local.append(0)
                 else:
                     d_local.append(d - pos)       # transition inside
-                    e_local.append(min(pos + nsub, e_abs) - pos)
+                    e_local.append(min(stop, e_abs) - pos)
 
                 pos += stride
-
-            # snap last window to the end of the shot
-            last_start = b - nsub
-            if last_start > (pos - stride):
-                shot_idx.append(s)
-                starts.append(last_start)
-                stops.append(b)
-                if d <= last_start:
-                    d_local.append(0)
-                    e_local.append(min(b, e_abs) - last_start)
-                elif d >= b:
-                    d_local.append(-1)
-                    e_local.append(0)
-                else:
-                    d_local.append(d - last_start)
-                    e_local.append(min(b, e_abs) - last_start)
 
         self.seq_shot_idx        = np.array(shot_idx,  dtype=int)
         self.seq_start           = np.array(starts,    dtype=int)
@@ -627,11 +624,18 @@ class ECEiTCNDataset(Dataset):
         if step > 1:
             X = X[..., ::step]
 
+        # 2b. pad partial end window to _T_sub so we don't discard the last stretch (mask padding in loss)
+        T_actual = X.shape[-1]
+        if T_actual < self._T_sub:
+            X_padded = np.zeros((*X.shape[:-1], self._T_sub), dtype=X.dtype)
+            X_padded[..., :T_actual] = X
+            X = X_padded
+
         # 3. normalisation
         if self.normalize and self.norm_mean is not None:
             X = (X - self.norm_mean[..., np.newaxis]) / self.norm_std[..., np.newaxis]
 
-        # 4. per-timestep label & weight
+        # 4. per-timestep label & weight (T = _T_sub; for partial windows, weight[T_actual:] = 0)
         T = X.shape[-1]
         target = np.zeros(T, dtype=np.float32)
         weight = np.full(T, self.neg_weight, dtype=np.float32)
@@ -644,16 +648,19 @@ class ECEiTCNDataset(Dataset):
             d = min((dl + 1) // step, T)
             if self.ignore_twarn:
                 # Do not train on the Twarn window: mask it from loss (weight=0).
-                # Only "clear" (0) before the window is learned; boundary is not assumed.
                 weight[d:] = 0.0
             else:
                 e = min((el + step - 1) // step, T)  # end of positive in output steps
                 e = max(d, e)  # ensure e >= d
                 target[d:e] = 1.0
                 weight[d:e] = self.pos_weight
-                # Excluded segment [e:T] (e.g. last 30 ms): leave target=0, weight=0 so no loss
+                # Excluded segment [e:T]: leave target=0, weight=0 so no loss
                 if e < T:
                     weight[e:] = 0.0
+
+        # Partial end window: mask padded timesteps (weight=0) so they don't contribute to loss
+        if T_actual < T:
+            weight[T_actual:] = 0.0
 
         return (torch.from_numpy(np.ascontiguousarray(X)),
                 torch.from_numpy(target),

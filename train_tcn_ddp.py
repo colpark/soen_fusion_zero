@@ -420,6 +420,8 @@ def parse_args():
                    help='Do not train on the Twarn window (weight=0); learn disruptive vs clear from data')
     g.add_argument('--baseline-len', type=int, default=40_000)
     g.add_argument('--nsub', type=int, default=781_250)
+    g.add_argument('--stride-scale', type=float, default=1.0,
+                   help='Scale stride (e.g. 0.1 = 10x more overlapping windows per shot, larger dataset)')
     g.add_argument('--prebuilt-subseq-dir', type=str, default=None,
                    help='Use pre-saved subsequence .npz from preprocess_subseqs.py (avoids shm)')
     g.add_argument('--pca-components', type=int, default=1, choices=[0, 1, 4, 8, 16],
@@ -453,7 +455,7 @@ def parse_args():
                    choices=['adamw', 'sgd'],
                    help='Optimizer (default: adamw)')
     g.add_argument('--lr', type=float, default=None,
-                   help='Learning rate (default: 1e-3 for AdamW, 0.5 for SGD)')
+                   help='Learning rate (default: 5e-4 for AdamW, 0.5 for SGD)')
     g.add_argument('--weight-decay', type=float, default=1e-4)
     g.add_argument('--momentum', type=float, default=0.9,
                    help='SGD momentum (ignored for AdamW)')
@@ -496,9 +498,8 @@ def main():
 
     # set default LR based on optimizer choice
     # NOTE: for AdamW, LR does NOT need linear scaling with batch size.
-    # Keep at 1e-3, same as the single-GPU baseline that achieved 0.91 F1.
     if args.lr is None:
-        args.lr = 1e-3 if args.optimizer == 'adamw' else 0.5
+        args.lr = 5e-4 if args.optimizer == 'adamw' else 0.5  # max LR 0.0005 for AdamW
 
     eff_batch = args.batch_size * world_size
     log(rank, '=' * 90)
@@ -522,7 +523,12 @@ def main():
     log(rank, f'  Parameters     : {n_params:,}')
 
     stride = (args.nsub // args.data_step - nrecept + 1) * args.data_step
-    log(rank, f'  Stride (raw)   : {stride:,}')
+    stride_scale = getattr(args, 'stride_scale', 1.0)
+    if stride_scale != 1.0:
+        stride = max(args.data_step, int(stride * stride_scale))
+        log(rank, f'  Stride (raw)   : {stride:,}  (scale={stride_scale})')
+    else:
+        log(rank, f'  Stride (raw)   : {stride:,}')
 
     model = model.to(device)
     model = DDP(model, device_ids=[local_rank])
