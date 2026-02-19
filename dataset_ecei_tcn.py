@@ -144,7 +144,7 @@ class ECEiTCNDataset(Dataset):
         label_balance:    str   = 'const',    # 'const' | 'none'
         norm_stats_path:  str | None = 'norm_stats.npz',
         norm_train_split: str   = 'train',
-        norm_max_shots:   int   = 100,
+        norm_max_shots:   Optional[int] = 100,  # None = use all shots in split for norm stats
         decimated_root:   str | None = None,
         clear_root:       str | None = None,
         clear_decimated_root: str | None = None,
@@ -163,7 +163,7 @@ class ECEiTCNDataset(Dataset):
                               e.g. {'train': 0.8, 'test': 0.2}. Default 80% train, 20% test.
             norm_stats_path:  Where to save / load per-channel mean & std.
             norm_train_split: Which split to use when computing stats.
-            norm_max_shots:   Max number of shots sampled for stat estimation.
+            norm_max_shots:   Max number of shots for stat estimation; None = use entire split.
             n_input_channels: If 1, 4, 8, or 16, use PCA data: LFS shape (C, T); norm (C,). None = full 160 (20×8).
         All time parameters (Twarn, baseline_length, nsub, stride) are
         specified in **raw 1 MHz samples** regardless of whether decimated
@@ -244,7 +244,7 @@ class ECEiTCNDataset(Dataset):
                 print(f'[ECEiTCNDataset] Loaded norm stats from {p}')
             else:
                 self.compute_norm_stats(split=norm_train_split,
-                                        max_shots=norm_max_shots)
+                                        max_shots=norm_max_shots if norm_max_shots is not None else None)
                 self.save_norm_stats(str(p))
                 print(f'[ECEiTCNDataset] Computed & saved norm stats to {p}')
 
@@ -478,14 +478,15 @@ class ECEiTCNDataset(Dataset):
     # ── normalisation statistics ──────────────────────────────────────
 
     def compute_norm_stats(self, split: str = 'train',
-                           max_shots: int = 60) -> Tuple[np.ndarray, np.ndarray]:
-        """Compute per-channel mean/std from *split* shots (online Welford).
+                           max_shots: Optional[int] = 60) -> Tuple[np.ndarray, np.ndarray]:
+        """Compute per-channel mean/std from *split* shots.
 
+        If max_shots is None, use all shots in the split; otherwise sample up to max_shots.
         Works with both raw and pre-decimated data transparently.
         """
         mask    = self.splits == split
         indices = np.where(mask)[0]
-        if len(indices) > max_shots:
+        if max_shots is not None and len(indices) > max_shots:
             indices = np.random.choice(indices, max_shots, replace=False)
 
         C = self._n_input_channels
