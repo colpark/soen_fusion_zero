@@ -39,19 +39,21 @@ Preprocessing pipeline (applied in __getitem__ when reading raw data)
 Twarn (warning window)
 ----------------------
 Twarn is the pre-disruption window in samples at 1 MHz (e.g. 300_000 = 300 ms).
-It defines (t_disrupt - Twarn, t_disrupt]. By default we label that window as 1.
-With ignore_twarn=True we do not train on it (weight=0); only clear (0) is
-learned and the boundary is not assumed.
+Label 1 (disruptive) covers from (t_disrupt - Twarn) through the end of the shot
+(i.e. Twarn + from time of disruption till end of data). We use full shot length
+(read from HDF5) so data and labels extend past t_disrupt.
+With ignore_twarn=True we do not train on the positive window (weight=0).
 
 Label construction
 ------------------
 Per-timestep binary (when ignore_twarn=False):
-  0 (clear)      for time > Twarn before disruption (and optionally in the last
-                 exclude_last_ms before disruption, if set)
-  1 (disruptive) for time in (t_disrupt - Twarn, t_disrupt - exclude_last_ms]
-  Optionally the last exclude_last_ms (e.g. 30 ms) can be excluded from the
-  positive class (Churchill et al.: mitigation timing).
-When ignore_twarn=True: the Twarn window is masked from loss (weight=0).
+  0 (clear)      for time > Twarn before disruption
+  1 (disruptive) for time in (t_disrupt - Twarn, end of shot]
+  So we label as 1 both the Twarn window and from disruption to end of data.
+  Optionally exclude_last_ms (e.g. 30 ms) can exclude the last N ms before
+  t_disrupt from the positive class (Churchill et al.: mitigation timing);
+  when we extend to end of shot, positive_end_idx = T_shot overrides that.
+When ignore_twarn=True: the positive window is masked from loss (weight=0).
 Shots from root are disruptive; optional clear_root adds non-disruptive shots (whole shot = clear).
 """
 
@@ -204,9 +206,20 @@ class ECEiTCNDataset(Dataset):
         self.positive_end_idx = np.maximum(
             self.disrupt_idx,
             self.t_dis - exclude_samps,
-        ).astype(np.int64)  # end of "label 1" region (don't label last exclude_last_ms as 1)
+        ).astype(np.int64)  # will be extended to end of shot below
         self.start_idx   = np.full(len(self.shots), self.baseline_length // q)
         self.stop_idx    = self.t_dis.copy()
+
+        # Use full shot length and label 1 from (t_dis - Twarn) to end of data (not just Twarn)
+        data_root = self._decimated_root if self._use_decimated else self.root
+        for s in range(len(self.shots)):
+            try:
+                with h5py.File(Path(data_root) / f'{self.shots[s]}.h5', 'r') as f:
+                    T_shot = f['LFS'].shape[-1]
+            except (OSError, IOError, KeyError):
+                continue
+            self.stop_idx[s] = T_shot
+            self.positive_end_idx[s] = T_shot  # label 1 from disrupt_idx to end of shot
 
         # Per-shot data root and step (for mixed disruptive + clear)
         self._shot_data_root: list = [
