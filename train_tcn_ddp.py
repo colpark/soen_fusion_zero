@@ -19,6 +19,7 @@ import json
 import math
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -467,7 +468,10 @@ def parse_args():
 
     # ── checkpointing ──
     g = p.add_argument_group('checkpointing')
-    g.add_argument('--checkpoint-dir', type=str, default='checkpoints_tcn_ddp')
+    g.add_argument('--checkpoint-dir', type=str, default='checkpoints_tcn_ddp',
+                   help='Base path for checkpoints; with --checkpoint-by-time a start-time subdir is added')
+    g.add_argument('--no-checkpoint-by-time', action='store_false', dest='checkpoint_by_time',
+                   help='Do not add start-time subdir to checkpoint-dir (default: add YYYYMMDD_HHMMSS to distinguish runs)')
     g.add_argument('--resume', type=str, default=None,
                    help='Path to checkpoint to resume from')
 
@@ -476,6 +480,13 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    # ── Checkpoint dir: add start-time subdir to distinguish runs; when resuming, use resume file's parent
+    if args.resume:
+        args.checkpoint_dir = str(Path(args.resume).resolve().parent)
+    elif getattr(args, 'checkpoint_by_time', True):
+        start_time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+        args.checkpoint_dir = str(Path(args.checkpoint_dir) / start_time_str)
 
     # ── PCA vs full decimated: set data roots and input_channels ────────
     base = '/home/idies/workspace/Storage/yhuang2/persistent/ecei'
