@@ -169,8 +169,9 @@ class DistributedStratifiedBatchSampler:
 
     All ranks generate the same deterministic sequence of balanced batches
     (same seed), then each rank takes every ``world_size``-th batch
-    starting from its ``rank``.  This guarantees no overlap and full
-    coverage of the majority class each epoch.
+    starting from its ``rank``.  Batches are padded so every rank has the
+    same number of batches (avoids NCCL timeout when one rank enters
+    validation before others).
     """
 
     def __init__(self, labels, indices, batch_size,
@@ -190,13 +191,18 @@ class DistributedStratifiedBatchSampler:
 
     def __iter__(self):
         all_batches = list(self._inner)
-        for i in range(self.rank, len(all_batches), self.world_size):
+        total = len(all_batches)
+        # Pad so total is divisible by world_size → same num batches per rank
+        padded = ((total + self.world_size - 1) // self.world_size) * self.world_size
+        if padded > total:
+            for j in range(total, padded):
+                all_batches.append(all_batches[j % total])
+        for i in range(self.rank, padded, self.world_size):
             yield all_batches[i]
 
     def __len__(self):
         total = len(self._inner)
-        return total // self.world_size + (
-            1 if self.rank < total % self.world_size else 0)
+        return (total + self.world_size - 1) // self.world_size
 
 
 # ═════════════════════════════════════════════════════════════════════════
