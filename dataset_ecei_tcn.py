@@ -23,6 +23,13 @@ Optionally, *decimated_root* / *clear_decimated_root* hold pre-processed files:
 When decimated_root exists the dataset reads from it directly, skipping
 offset removal and decimation in __getitem__ for much faster training.
 
+For PCA data (n_input_channels in {1, 4, 8, 16}), LFS shape is (C, T). PCA
+projections have different variances per component (PC1 >> PC2 >> ...); per-
+component normalization is recommended so the model sees comparable scales.
+Norm stats are (C,) and should be stored separately per PCA variant (e.g.
+norm_stats_pca1.npz, norm_stats_pca8.npz) so switching --pca-components
+does not overwrite or mix stats.
+
 Preprocessing pipeline (applied in __getitem__ when reading raw data)
 ---------------------------------------------------------------------
 1. DC offset removal   – mean of first *baseline_length* samples per channel
@@ -144,6 +151,7 @@ class ECEiTCNDataset(Dataset):
         clear_split_frac: Optional[Dict[str, float]] = None,
         exclude_last_ms:  float = 0.0,        # don't label last N ms as 1 (Churchill: 30 ms for mitigation)
         ignore_twarn:     bool   = False,     # if True, do not train on Twarn window (weight=0); learn boundary
+        n_input_channels: Optional[int] = None,  # 1, 4, 8, or 16 for PCA data (LFS shape (C,T)); None = 160 (20×8)
     ):
         """
         Args:
@@ -156,6 +164,7 @@ class ECEiTCNDataset(Dataset):
             norm_stats_path:  Where to save / load per-channel mean & std.
             norm_train_split: Which split to use when computing stats.
             norm_max_shots:   Max number of shots sampled for stat estimation.
+            n_input_channels: If 1, 4, 8, or 16, use PCA data: LFS shape (C, T); norm (C,). None = full 160 (20×8).
         All time parameters (Twarn, baseline_length, nsub, stride) are
         specified in **raw 1 MHz samples** regardless of whether decimated
         data is used — the class converts internally.
@@ -170,13 +179,14 @@ class ECEiTCNDataset(Dataset):
         self.label_balance    = label_balance
         self.exclude_last_ms  = exclude_last_ms
         self.ignore_twarn    = ignore_twarn
+        self._n_input_channels = n_input_channels  # None → (20,8); 1,4,8,16 → PCA (C,T)
 
         # ── check for pre-decimated data ──────────────────────────────
         self._use_decimated = False
         self._decimated_root: Optional[Path] = None
         if decimated_root is not None:
             p = Path(decimated_root)
-            if p.exists() and (p / 'meta.csv').exists():
+            if p.exists():
                 self._use_decimated = True
                 self._decimated_root = p
                 print(f'[ECEiTCNDataset] Using pre-decimated data '
@@ -224,8 +234,8 @@ class ECEiTCNDataset(Dataset):
         self._T_sub = self.nsub // self.data_step
 
         # normalisation – auto load / compute / save
-        self.norm_mean: Optional[np.ndarray] = None   # (20, 8)
-        self.norm_std:  Optional[np.ndarray] = None   # (20, 8)
+        self.norm_mean: Optional[np.ndarray] = None   # (20, 8) or (C,) for PCA
+        self.norm_std:  Optional[np.ndarray] = None   # (20, 8) or (C,) for PCA
 
         if self.normalize and norm_stats_path is not None:
             p = Path(norm_stats_path)
@@ -478,8 +488,13 @@ class ECEiTCNDataset(Dataset):
         if len(indices) > max_shots:
             indices = np.random.choice(indices, max_shots, replace=False)
 
-        running_sum    = np.zeros((20, 8), dtype=np.float64)
-        running_sq_sum = np.zeros((20, 8), dtype=np.float64)
+        C = self._n_input_channels
+        if C is None:
+            running_sum    = np.zeros((20, 8), dtype=np.float64)
+            running_sq_sum = np.zeros((20, 8), dtype=np.float64)
+        else:
+            running_sum    = np.zeros((C,), dtype=np.float64)
+            running_sq_sum = np.zeros((C,), dtype=np.float64)
         n_total = 0
 
         for s in tqdm(indices, desc=f'Norm stats ({split})'):

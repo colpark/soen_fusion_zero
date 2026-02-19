@@ -416,10 +416,17 @@ def parse_args():
     g.add_argument('--nsub', type=int, default=781_250)
     g.add_argument('--prebuilt-subseq-dir', type=str, default=None,
                    help='Use pre-saved subsequence .npz from preprocess_subseqs.py (avoids shm)')
+    g.add_argument('--pca-components', type=int, default=1, choices=[0, 1, 4, 8, 16],
+                   help='Use PCA data: 1,4,8,16 = number of components (dirs *_pcaN); 0 = full 160-channel decimated (default: 1)')
+    g.add_argument('--norm-stats', type=str, default=None,
+                   help='Path to norm stats .npz (default: norm_stats_pca{N}.npz for PCA, norm_stats.npz for full)')
+    g.add_argument('--no-normalize', action='store_true',
+                   help='Disable per-channel normalization (PCA components have very different scales without it)')
 
     # ── model ──
     g = p.add_argument_group('model')
-    g.add_argument('--input-channels', type=int, default=160)
+    g.add_argument('--input-channels', type=int, default=160,
+                   help='Model input channels (overridden by --pca-components when > 0)')
     g.add_argument('--levels', type=int, default=4)
     g.add_argument('--nhid', type=int, default=80)
     g.add_argument('--kernel-size', type=int, default=15)
@@ -461,6 +468,17 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    # ── PCA vs full decimated: set data roots and input_channels ────────
+    base = '/home/idies/workspace/Storage/yhuang2/persistent/ecei'
+    if args.pca_components > 0:
+        args.decimated_root = f'{base}/dsrpt_decimated_pca{args.pca_components}'
+        args.clear_root = f'{base}/clear_decimated_pca{args.pca_components}'
+        args.clear_decimated_root = args.clear_root
+        args.input_channels = args.pca_components
+    # Norm stats path: separate file per PCA variant so pca1/pca8 do not overwrite
+    if args.norm_stats is None:
+        args.norm_stats = f'norm_stats_pca{args.pca_components}.npz' if args.pca_components > 0 else 'norm_stats.npz'
 
     # ── DDP initialisation ───────────────────────────────────────────────
     dist.init_process_group(backend='nccl')
@@ -525,7 +543,9 @@ def main():
             data_step=args.data_step,
             nsub=args.nsub,
             stride=stride,
-            normalize=True,
+            normalize=not args.no_normalize,
+            norm_stats_path=args.norm_stats,
+            n_input_channels=args.pca_components if args.pca_components > 0 else None,
         )
         if rank == 0:
             ds.summary()
