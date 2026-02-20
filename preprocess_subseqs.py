@@ -75,12 +75,21 @@ def build_shot_metadata(
     shots = meta["shot"].values.astype(int)
     splits = meta["split"].values.astype(str)
     t_dis = (meta["t_disruption"].values * 1000 / q).astype(int)
-    # Disruptive = only Twarn (e.g. 300 ms) before t_disruption; we do not use data past t_dis.
     disrupt_idx = t_dis - twarn // q
     exclude_samps = int(exclude_last_ms * (1000 / q))
     positive_end_idx = np.maximum(disrupt_idx, t_dis - exclude_samps).astype(np.int64)
     start_idx = np.full(len(shots), baseline_length // q, dtype=np.int64)
-    stop_idx = t_dis.copy()  # tile only up to t_disrupt for disruptive shots
+    stop_idx = t_dis.copy()
+
+    # DisruptCNN behavior: use full shot length for disruptive shots (data and labels past t_disrupt)
+    read_root = decimated_root if use_decimated else root
+    for i, shot in enumerate(shots):
+        h5_path = Path(read_root) / f"{shot}.h5"
+        if h5_path.exists():
+            with h5py.File(h5_path, "r") as f:
+                T = f["LFS"].shape[-1]
+            stop_idx[i] = T
+            positive_end_idx[i] = T
 
     shot_data_root: List[Path] = [decimated_root if use_decimated else root] * len(shots)
     shot_step: List[int] = [1 if use_decimated else data_step] * len(shots)

@@ -39,24 +39,23 @@ Preprocessing pipeline (applied in __getitem__ when reading raw data)
 Twarn (warning window)
 ----------------------
 Twarn is the pre-disruption window in samples at 1 MHz (e.g. 300_000 = 300 ms).
-**Only the 300 ms before t_disruption is considered "disruptive".**
-Label 1 (disruptive) covers only (t_disrupt - Twarn, t_disrupt]; we do not label
-or use data after t_disrupt. Tiling for disruptive shots ends at t_dis (stop_idx = t_dis).
+Label 1 (disruptive) starts at (t_disrupt - Twarn) and extends to the end of the shot
+(matching DisruptCNN / Churchill et al.): we use full shot length and label past t_disrupt.
 With ignore_twarn=True we do not train on the positive window (weight=0).
 
 Label construction
 ------------------
 Per-timestep binary (when ignore_twarn=False):
-  0 (clear)      for time > Twarn before disruption, and for time >= t_disrupt (we do not use data past t_disrupt)
-  1 (disruptive) for time in (t_disrupt - Twarn, t_disrupt]  (only the 300 ms before disruption)
+  0 (clear)      for time > Twarn before disruption
+  1 (disruptive) for time in (t_disrupt - Twarn, end of shot]
   Optionally exclude_last_ms (e.g. 30 ms) can exclude the last N ms before
   t_disrupt from the positive class (Churchill et al.: mitigation timing).
 When ignore_twarn=True: the positive window is masked from loss (weight=0).
 
 End of shot and tiling
 ---------------------
-For disruptive shots: we tile only up to t_disruption (stop_idx = t_dis).
-No data or labels extend past t_disrupt. positive_end_idx = t_dis (or t_dis - exclude_samps).
+We use the full shot length (T_shot from HDF5): stop_idx = T_shot, positive_end_idx = T_shot
+for disruptive shots, so data and labels extend past t_disrupt (DisruptCNN behavior).
 For clear shots: stop_idx = T_shot (full shot). We create a window at every stride
 position; partial end windows are padded and masked (weight=0). Shots from root are
 disruptive; optional clear_root adds non-disruptive shots (whole shot = clear).
@@ -208,16 +207,23 @@ class ECEiTCNDataset(Dataset):
         self.t_dis       = (self.meta['t_disruption'].values * 1000 / q).astype(int)
         self.disrupt_idx = self.t_dis - self.Twarn // q
         exclude_samps   = int(self.exclude_last_ms * (1000 / q))  # ms → samples in data space
-        # Disruptive = only 300 ms before t_disruption; we do not use or label data past t_disrupt.
         self.positive_end_idx = np.maximum(
             self.disrupt_idx,
             self.t_dis - exclude_samps,
-        ).astype(np.int64)  # end of label-1 region = t_dis (or t_dis - exclude_samps)
+        ).astype(np.int64)  # extended to T_shot below (DisruptCNN: label 1 to end of shot)
         self.start_idx   = np.full(len(self.shots), self.baseline_length // q)
-        self.stop_idx    = self.t_dis.copy()  # tile only up to t_disrupt for disruptive shots
+        self.stop_idx    = self.t_dis.copy()
 
-        # For clear shots (added later), stop_idx and positive_end_idx are set in _add_clear_shots.
-        # Disruptive shots: keep stop_idx = t_dis, positive_end_idx = t_dis (no extension past disruption).
+        # Use full shot length: label 1 from (t_dis - Twarn) to end of data (DisruptCNN behavior)
+        data_root = self._decimated_root if self._use_decimated else self.root
+        for s in range(len(self.shots)):
+            try:
+                with h5py.File(Path(data_root) / f'{self.shots[s]}.h5', 'r') as f:
+                    T_shot = f['LFS'].shape[-1]
+            except (OSError, IOError, KeyError):
+                continue
+            self.stop_idx[s] = T_shot
+            self.positive_end_idx[s] = T_shot
 
         # Per-shot data root and step (for mixed disruptive + clear)
         self._shot_data_root: list = [
