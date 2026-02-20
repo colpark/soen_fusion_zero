@@ -75,11 +75,12 @@ def build_shot_metadata(
     shots = meta["shot"].values.astype(int)
     splits = meta["split"].values.astype(str)
     t_dis = (meta["t_disruption"].values * 1000 / q).astype(int)
+    # Disruptive = only Twarn (e.g. 300 ms) before t_disruption; we do not use data past t_dis.
     disrupt_idx = t_dis - twarn // q
     exclude_samps = int(exclude_last_ms * (1000 / q))
     positive_end_idx = np.maximum(disrupt_idx, t_dis - exclude_samps).astype(np.int64)
     start_idx = np.full(len(shots), baseline_length // q, dtype=np.int64)
-    stop_idx = t_dis.copy()
+    stop_idx = t_dis.copy()  # tile only up to t_disrupt for disruptive shots
 
     shot_data_root: List[Path] = [decimated_root if use_decimated else root] * len(shots)
     shot_step: List[int] = [1 if use_decimated else data_step] * len(shots)
