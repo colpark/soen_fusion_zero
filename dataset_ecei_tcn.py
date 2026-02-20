@@ -5,7 +5,7 @@ Adapted from disruptcnn (Churchill et al. 2019) for KSTAR ECEi data.
 Data layout
 -----------
 root/  (disruptive shots)
-  meta.csv          – columns: shot, split, t_disruption (ms), ...
+  meta.csv          – columns: shot, split, t_disruption (ms); optional: t_last or t_segment_end (ms) for segment end
   {shot}.h5         – HDF5 with key 'LFS' → (20, 8, T) float at 1 MHz
 
 Optionally, *clear_root* adds non-disruptive shots (no disruption; whole shot = clear):
@@ -54,11 +54,12 @@ When ignore_twarn=True: the positive window is masked from loss (weight=0).
 
 End of shot and tiling
 ---------------------
-We use the full shot length (T_shot from HDF5): stop_idx = T_shot, positive_end_idx = T_shot
-for disruptive shots, so data and labels extend past t_disrupt (DisruptCNN behavior).
-For clear shots: stop_idx = T_shot (full shot). We create a window at every stride
-position; partial end windows are padded and masked (weight=0). Shots from root are
-disruptive; optional clear_root adds non-disruptive shots (whole shot = clear).
+We use the **segment end** (DisruptCNN: tend = max(tdisrupt, min(tstops, tflatstops))).
+If meta.csv has a segment-end column in ms (e.g. t_last, t_segment_end), we use it to set
+stop_idx and positive_end_idx (capped by file length T_shot). If not, we use T_shot (full file).
+If stop_at_last_window_containing_disrupt=True (default), we also cap stop_idx so the last
+possible window still includes t_disrupt (no windows start after t_disrupt).
+For clear shots: stop_idx = T_shot. Partial end windows are padded and masked (weight=0).
 """
 
 from __future__ import annotations
@@ -157,6 +158,7 @@ class ECEiTCNDataset(Dataset):
         clear_split_frac: Optional[Dict[str, float]] = None,
         exclude_last_ms:  float = 0.0,        # don't label last N ms as 1 (Churchill: 30 ms for mitigation)
         ignore_twarn:     bool   = False,     # if True, do not train on Twarn window (weight=0); learn boundary
+        stop_at_last_window_containing_disrupt: bool = True,  # cap tiling so no windows start after t_disrupt
         n_input_channels: Optional[int] = None,  # 1, 4, 8, or 16 for PCA data (LFS shape (C,T)); None = 160 (20×8)
     ):
         """
@@ -171,6 +173,8 @@ class ECEiTCNDataset(Dataset):
             norm_train_split: Which split to use when computing stats.
             norm_max_shots:   Max number of shots for stat estimation; None = use entire split.
             n_input_channels: If 1, 4, 8, or 16, use PCA data: LFS shape (C, T); norm (C,). None = full 160 (20×8).
+            stop_at_last_window_containing_disrupt: If True, cap tiling so no windows start after t_disrupt
+                (i.e., the last possible window still contains the disruption time).
         All time parameters (Twarn, baseline_length, nsub, stride) are
         specified in **raw 1 MHz samples** regardless of whether decimated
         data is used — the class converts internally.
@@ -185,6 +189,7 @@ class ECEiTCNDataset(Dataset):
         self.label_balance    = label_balance
         self.exclude_last_ms  = exclude_last_ms
         self.ignore_twarn    = ignore_twarn
+        self.stop_at_last_window_containing_disrupt = stop_at_last_window_containing_disrupt
         self._n_input_channels = n_input_channels  # None → (20,8); 1,4,8,16 → PCA (C,T)
 
         # ── check for pre-decimated data ──────────────────────────────
@@ -210,11 +215,22 @@ class ECEiTCNDataset(Dataset):
         self.positive_end_idx = np.maximum(
             self.disrupt_idx,
             self.t_dis - exclude_samps,
-        ).astype(np.int64)  # extended to T_shot below (DisruptCNN: label 1 to end of shot)
+        ).astype(np.int64)  # extended to segment end (or T_shot) below
         self.start_idx   = np.full(len(self.shots), self.baseline_length // q)
         self.stop_idx    = self.t_dis.copy()
 
-        # Use full shot length: label 1 from (t_dis - Twarn) to end of data (DisruptCNN behavior)
+        # Segment end (DisruptCNN: use segment end, not necessarily full file).
+        seg_end_col = None
+        for c in ("t_last", "t_segment_end", "t_segment_end_ms"):
+            if c in self.meta.columns:
+                seg_end_col = c
+                break
+        if seg_end_col is not None:
+            seg_ms = pd.to_numeric(self.meta[seg_end_col], errors="coerce").values
+            segment_end_samp = (seg_ms * 1000 / q).astype(np.float64)
+        else:
+            segment_end_samp = None
+        data_nsub = self.nsub // q
         data_root = self._decimated_root if self._use_decimated else self.root
         for s in range(len(self.shots)):
             try:
@@ -222,8 +238,14 @@ class ECEiTCNDataset(Dataset):
                     T_shot = f['LFS'].shape[-1]
             except (OSError, IOError, KeyError):
                 continue
-            self.stop_idx[s] = T_shot
-            self.positive_end_idx[s] = T_shot
+            if segment_end_samp is not None and not np.isnan(segment_end_samp[s]):
+                end = min(int(segment_end_samp[s]), T_shot)
+            else:
+                end = T_shot
+            if self.stop_at_last_window_containing_disrupt and self.disrupt_idx[s] <= end:
+                end = min(end, int(self.t_dis[s]) + data_nsub)
+            self.stop_idx[s] = end
+            self.positive_end_idx[s] = end
 
         # Per-shot data root and step (for mixed disruptive + clear)
         self._shot_data_root: list = [
@@ -409,8 +431,12 @@ class ECEiTCNDataset(Dataset):
             d = int(self.disrupt_idx[s])          # absolute disrupt index
             e_abs = int(self.positive_end_idx[s]) # end of "label 1" region
 
+            pos_limit = b
+            if self.stop_at_last_window_containing_disrupt and d <= b:
+                pos_limit = min(b, int(self.t_dis[s]) + 1)
+
             pos = a
-            while pos < b:
+            while pos < pos_limit:
                 stop = min(pos + nsub, b)
                 shot_idx.append(s)
                 starts.append(pos)

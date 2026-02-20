@@ -81,15 +81,25 @@ def build_shot_metadata(
     start_idx = np.full(len(shots), baseline_length // q, dtype=np.int64)
     stop_idx = t_dis.copy()
 
-    # DisruptCNN behavior: use full shot length for disruptive shots (data and labels past t_disrupt)
+    # Segment end (DisruptCNN): use meta t_last/t_segment_end if present, else file length T
+    seg_end_col = next((c for c in ("t_last", "t_segment_end", "t_segment_end_ms") if c in meta.columns), None)
+    if seg_end_col is not None:
+        seg_ms = pd.to_numeric(meta[seg_end_col], errors="coerce").values
+        segment_end_samp = (seg_ms * 1000 / q).astype(np.float64)
+    else:
+        segment_end_samp = None
     read_root = decimated_root if use_decimated else root
     for i, shot in enumerate(shots):
         h5_path = Path(read_root) / f"{shot}.h5"
         if h5_path.exists():
             with h5py.File(h5_path, "r") as f:
                 T = f["LFS"].shape[-1]
-            stop_idx[i] = T
-            positive_end_idx[i] = T
+            if segment_end_samp is not None and not np.isnan(segment_end_samp[i]):
+                end = min(int(segment_end_samp[i]), T)
+            else:
+                end = T
+            stop_idx[i] = end
+            positive_end_idx[i] = end
 
     shot_data_root: List[Path] = [decimated_root if use_decimated else root] * len(shots)
     shot_step: List[int] = [1 if use_decimated else data_step] * len(shots)
