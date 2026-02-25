@@ -623,3 +623,71 @@ def data_generator_original(
         test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, drop_last=True
     )
     return train_loader, val_loader, test_loader
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Wrapper for train_tcn_ddp: fixed-length (X, target, weight) + split API
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class OriginalStyleDatasetForDDP:
+    """Wraps EceiDatasetOriginal so it matches the interface expected by train_tcn_ddp.
+
+    - __getitem__(i) returns (X, target, weight) with X padded/cropped to fixed T = nsub.
+    - seq_has_disrupt, get_split_indices('train'/'test'/'val'), pos_weight, neg_weight,
+      _compute_class_weights(indices) for stratified sampling and class weights.
+    """
+
+    def __init__(self, inner: EceiDatasetOriginal):
+        self._inner = inner
+        if not hasattr(inner, "train_inds"):
+            inner.train_val_test_split()
+        self._T_fixed = int(inner.nsub)
+
+    def __len__(self) -> int:
+        return len(self._inner)
+
+    def __getitem__(self, index: int):
+        X, target, _idx, weight = self._inner[index]
+        X = X.cpu().numpy() if isinstance(X, torch.Tensor) else np.asarray(X)
+        target = target.cpu().numpy() if isinstance(target, torch.Tensor) else np.asarray(target)
+        weight = weight.cpu().numpy() if isinstance(weight, torch.Tensor) else np.asarray(weight)
+        T = X.shape[-1]
+        if T >= self._T_fixed:
+            X = X[..., : self._T_fixed].copy()
+            target = target[: self._T_fixed].copy()
+            weight = weight[: self._T_fixed].copy()
+        else:
+            pad = self._T_fixed - T
+            X = np.concatenate([X, np.zeros((*X.shape[:-1], pad), dtype=X.dtype)], axis=-1)
+            target = np.concatenate([target, np.zeros(pad, dtype=target.dtype)])
+            weight = np.concatenate([weight, np.zeros(pad, dtype=weight.dtype)])
+        return (
+            torch.from_numpy(X).float(),
+            torch.from_numpy(target).float(),
+            torch.from_numpy(weight).float(),
+        )
+
+    @property
+    def seq_has_disrupt(self) -> np.ndarray:
+        return self._inner.disruptedi
+
+    def get_split_indices(self, split: str) -> np.ndarray:
+        if split == "train":
+            return self._inner.train_inds
+        if split == "test":
+            return self._inner.test_inds
+        if split == "val":
+            return self._inner.val_inds
+        raise ValueError(f"Unknown split: {split}")
+
+    @property
+    def pos_weight(self) -> float:
+        return self._inner.pos_weight
+
+    @property
+    def neg_weight(self) -> float:
+        return self._inner.neg_weight
+
+    def _compute_class_weights(self, indices: Optional[np.ndarray] = None):
+        self._inner.calc_label_weights(inds=indices)
