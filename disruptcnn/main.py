@@ -104,7 +104,14 @@ parser.add_argument('--plot', action='store_true',
                     help='plot validation disruptive sequences (default: False)')
 parser.add_argument('--flattop-only', action='store_true',
                     help='use only data from the current flattop (default: False)')
-
+parser.add_argument('--use-original-dataloader', action='store_true',
+                    help='use original DisruptCNN segment/label logic from dataset_original (shot list, flattop_only, Twarn=300)')
+parser.add_argument('--data-root', default=None, type=str,
+                    help='data root (disrupt/, clear/, normalization.npz). Overrides default if set.')
+parser.add_argument('--clear-file', default=None, type=str,
+                    help='path to clear shot list .txt. Overrides default if set.')
+parser.add_argument('--disrupt-file', default=None, type=str,
+                    help='path to disrupt shot list .txt. Overrides default if set.')
 
 
 root = '/scratch/gpfs/rmc2/ecei_d3d/'
@@ -209,18 +216,35 @@ def main_worker(gpu,ngpus_per_node,args):
 
     if (args.test>0) and (args.test < args.batch_size): args.batch_size = args.test
 
+    use_data_root = args.data_root if args.data_root else data_root
+    use_clear_file = args.clear_file if args.clear_file else clear_file
+    use_disrupt_file = args.disrupt_file if args.disrupt_file else disrupt_file
+
     print(args)
-    dataset = EceiDataset(data_root,clear_file,disrupt_file,
+    if getattr(args, 'use_original_dataloader', False):
+        from disruptcnn.dataset_original import EceiDatasetOriginal, data_generator_original
+        dataset = EceiDatasetOriginal(use_data_root, use_clear_file, use_disrupt_file,
+                          test=args.test, test_indices=args.test_indices,
+                          label_balance=args.label_balance,
+                          normalize=(not args.no_normalize),
+                          data_step=args.data_step,
+                          nsub=args.nsub, nrecept=args.nrecept,
+                          flattop_only=args.flattop_only)
+        dataset.train_val_test_split()
+        train_loader, val_loader, test_loader = data_generator_original(dataset, args.batch_size,
+                                                            distributed=args.distributed,
+                                                            num_workers=args.workers,
+                                                            undersample=args.undersample)
+    else:
+        dataset = EceiDataset(use_data_root, use_clear_file, use_disrupt_file,
                           test=args.test,test_indices=args.test_indices,
                           label_balance=args.label_balance,
                           normalize=(not args.no_normalize),
                           data_step=args.data_step,
                           nsub=args.nsub,nrecept=args.nrecept,
                           flattop_only=args.flattop_only)
-    #create the indices for train/val/test split
-    dataset.train_val_test_split()
-    #create data loaders
-    train_loader, val_loader, test_loader = data_generator(dataset, args.batch_size, 
+        dataset.train_val_test_split()
+        train_loader, val_loader, test_loader = data_generator(dataset, args.batch_size,
                                                             distributed=args.distributed,
                                                             num_workers=args.workers,
                                                             undersample=args.undersample)
@@ -287,7 +311,14 @@ def main_worker(gpu,ngpus_per_node,args):
             
             #NOTE: to reuse the train_inds, etc. as defined by the splits file, the undersample has to
             #      be turned off here
-            train_loader, val_loader, test_loader = data_generator(dataset, args.batch_size, 
+            if getattr(args, 'use_original_dataloader', False):
+                from disruptcnn.dataset_original import data_generator_original
+                train_loader, val_loader, test_loader = data_generator_original(dataset, args.batch_size,
+                                                        distributed=args.distributed,
+                                                        num_workers=args.workers,
+                                                        undersample=None)
+            else:
+                train_loader, val_loader, test_loader = data_generator(dataset, args.batch_size, 
                                                         distributed=args.distributed,
                                                         num_workers=args.workers,
                                                         undersample=None)
