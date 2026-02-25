@@ -14,6 +14,7 @@ Use this dataloader for training that exactly matches the original DisruptCNN se
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
@@ -209,19 +210,28 @@ def subsequences_past_tiling(
 
 def _parse_shot_lists(
     disrupt_file: str,
-    clear_file: str,
+    clear_file: Optional[str],
     flattop_only: bool,
     snr_min_threshold: Optional[float],
 ) -> tuple:
     """
-    Parse disrupt and clear shot list files and compute per-shot segment indices.
+    Parse disrupt (and optionally clear) shot list files and compute per-shot segment indices.
+
+    If clear_file is None or empty, only disrupt shots are used (disrupt-only training).
 
     Returns:
         shot, start_idx, stop_idx, disrupt_idx, disrupted, dt, zero_idx
     """
     data_disrupt = np.loadtxt(disrupt_file, skiprows=1)
-    data_clear = np.loadtxt(clear_file, skiprows=1)
-    data_all = np.vstack((data_disrupt, data_clear))
+    if data_disrupt.ndim == 1:
+        data_disrupt = data_disrupt[np.newaxis, :]
+    if clear_file and str(clear_file).strip() and Path(clear_file).exists():
+        data_clear = np.loadtxt(clear_file, skiprows=1)
+        if data_clear.ndim == 1:
+            data_clear = data_clear[np.newaxis, :]
+        data_all = np.vstack((data_disrupt, data_clear))
+    else:
+        data_all = data_disrupt
 
     if snr_min_threshold is not None:
         snr_min = data_all[:, COL_SNR_MIN].astype(float)
@@ -274,7 +284,7 @@ class EceiDatasetOriginal(data.Dataset):
     def __init__(
         self,
         root: str,
-        clear_file: str,
+        clear_file: Optional[str],
         disrupt_file: str,
         train: bool = True,
         flattop_only: bool = True,
@@ -306,7 +316,7 @@ class EceiDatasetOriginal(data.Dataset):
             self.disrupted,
             _dt,
             self.zero_idx,
-        ) = _parse_shot_lists(disrupt_file, clear_file, flattop_only, snr_min_threshold)
+        ) = _parse_shot_lists(disrupt_file, clear_file or None, flattop_only, snr_min_threshold)
 
         self.length = len(self.shot)
 

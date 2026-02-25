@@ -112,6 +112,10 @@ parser.add_argument('--clear-file', default=None, type=str,
                     help='path to clear shot list .txt. Overrides default if set.')
 parser.add_argument('--disrupt-file', default=None, type=str,
                     help='path to disrupt shot list .txt. Overrides default if set.')
+parser.add_argument('--disrupt-only', action='store_true',
+                    help='use only disrupt shot list (no clear shots). Use with --use-original-dataloader when clear list is not in the original data.')
+parser.add_argument('--no-disrupt-only', action='store_true',
+                    help='use both disrupt and clear shot lists (cancel disrupt-only when using train_original).')
 
 
 root = '/scratch/gpfs/rmc2/ecei_d3d/'
@@ -222,6 +226,8 @@ def main_worker(gpu,ngpus_per_node,args):
 
     print(args)
     if getattr(args, 'use_original_dataloader', False):
+        if getattr(args, 'disrupt_only', False) and not getattr(args, 'no_disrupt_only', False):
+            use_clear_file = None  # disrupt-only: no clear shot list
         from disruptcnn.dataset_original import EceiDatasetOriginal, data_generator_original
         dataset = EceiDatasetOriginal(use_data_root, use_clear_file, use_disrupt_file,
                           test=args.test, test_indices=args.test_indices,
