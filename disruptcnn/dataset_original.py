@@ -385,12 +385,15 @@ class EceiDatasetOriginal(data.Dataset):
                 "Normalization stats not found. Set norm_stats_path or place normalization.npz or norm_stats.npz in root/decimated_root."
             )
         f = np.load(norm_path)
+        # Accept DisruptCNN keys (mean_flat, std_flat, mean_all, std_all) or fallback to mean/std
+        def _get(key: str, fallback: str):
+            return f[key] if key in f.files else f[fallback]
         if flattop_only:
-            self.normalize_mean = f["mean_flat"]
-            self.normalize_std = f["std_flat"]
+            self.normalize_mean = _get("mean_flat", "mean")
+            self.normalize_std = _get("std_flat", "std")
         else:
-            self.normalize_mean = f["mean_all"]
-            self.normalize_std = f["std_all"]
+            self.normalize_mean = _get("mean_all", "mean")
+            self.normalize_std = _get("std_all", "std")
         f.close()
 
         self.shots2seqs()
