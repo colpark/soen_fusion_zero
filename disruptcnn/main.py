@@ -12,7 +12,13 @@ import argparse
 from disruptcnn.loader import data_generator, EceiDataset
 from disruptcnn.model import TCN
 import time
-from tensorboardX import SummaryWriter
+try:
+    from tensorboardX import SummaryWriter
+except ImportError:
+    class SummaryWriter:
+        def add_scalar(self, *args, **kwargs): pass
+        def add_text(self, *args, **kwargs): pass
+        def close(self): pass
 import os, psutil, shutil
 import matplotlib
 matplotlib.use('Agg')
