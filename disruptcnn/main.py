@@ -137,9 +137,10 @@ def main():
     #assert (args.batch_size==1), "Currently need batch_size=1, due to variable length sequences"
     assert torch.cuda.is_available(), "GPU is currently required"
 
-    args.world_size = int(os.environ['SLURM_NTASKS'])
-    args.rank = int(os.environ['SLURM_PROCID'])
-    args.tstart = tstart
+    # Default to single process when not on SLURM
+    args.world_size = int(os.environ.get('SLURM_NTASKS', '1'))
+    args.rank = int(os.environ.get('SLURM_PROCID', '0'))
+    args.tstart = time.time()
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -165,9 +166,8 @@ def main():
         # main_worker process function
         mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
     else:
-        # Simply call main_worker function
-        #TODO Generalize for non-GPU? This requires GPU
-        args.gpu = int(os.environ['SLURM_LOCALID'])
+        # Simply call main_worker function (default GPU 0 when not on SLURM)
+        args.gpu = int(os.environ.get('SLURM_LOCALID', 0))
         main_worker(args.gpu, ngpus_per_node, args)
 
 def main_worker(gpu,ngpus_per_node,args):
