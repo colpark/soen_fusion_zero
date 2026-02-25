@@ -124,6 +124,8 @@ parser.add_argument('--no-disrupt-only', action='store_true',
                     help='use both disrupt and clear shot lists (cancel disrupt-only when using train_original).')
 parser.add_argument('--decimated-root', default=None, type=str,
                     help='directory with decimated H5 files ({shot}.h5). Use this instead of data_root/disrupt/ when data is pre-decimated.')
+parser.add_argument('--norm-stats', default=None, type=str,
+                    help='path to normalization stats .npz (e.g. norm_stats.npz in project root). Expects mean_flat, std_flat (or mean_all, std_all).')
 
 
 root = '/scratch/gpfs/rmc2/ecei_d3d/'
@@ -244,7 +246,8 @@ def main_worker(gpu,ngpus_per_node,args):
                           data_step=args.data_step,
                           nsub=args.nsub, nrecept=args.nrecept,
                           flattop_only=args.flattop_only,
-                          decimated_root=getattr(args, 'decimated_root', None))
+                          decimated_root=getattr(args, 'decimated_root', None),
+                          norm_stats_path=getattr(args, 'norm_stats', None))
         dataset.train_val_test_split()
         train_loader, val_loader, test_loader = data_generator_original(dataset, args.batch_size,
                                                             distributed=args.distributed,

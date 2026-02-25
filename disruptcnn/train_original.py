@@ -23,6 +23,13 @@ def main():
         sys.argv.insert(1, "--use-original-dataloader")
     if "--disrupt-only" not in sys.argv and "--no-disrupt-only" not in sys.argv:
         sys.argv.insert(1, "--disrupt-only")
+    if "--norm-stats" not in sys.argv:
+        # Default to project-root norm_stats.npz (soen_fusion_zero/norm_stats.npz)
+        from pathlib import Path
+        default_norm = Path(__file__).resolve().parent.parent / "norm_stats.npz"
+        if default_norm.exists():
+            sys.argv.insert(1, str(default_norm))
+            sys.argv.insert(1, "--norm-stats")
     from disruptcnn.main import main as run_main
     run_main()
 

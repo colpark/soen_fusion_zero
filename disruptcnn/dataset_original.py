@@ -298,9 +298,11 @@ class EceiDatasetOriginal(data.Dataset):
         nrecept: Optional[int] = None,
         snr_min_threshold: Optional[float] = None,
         decimated_root: Optional[str] = None,
+        norm_stats_path: Optional[str] = None,
     ):
         self.root = root
         self._decimated_root = Path(decimated_root) if decimated_root and str(decimated_root).strip() else None
+        self._norm_stats_path = norm_stats_path
         self.train = train
         self.Twarn = Twarn
         self.test = test
@@ -365,11 +367,23 @@ class EceiDatasetOriginal(data.Dataset):
                 base = np.zeros((LFS.shape[0], LFS.shape[1], self.shot.size), dtype=np.float64)
                 self.offsets = base
 
-        norm_path = os.path.join(self.root, "normalization.npz")
-        if not os.path.isfile(norm_path) and self._decimated_root is not None:
-            alt = self._decimated_root / "normalization.npz"
-            if alt.exists():
-                norm_path = str(alt)
+        if self._norm_stats_path and os.path.isfile(self._norm_stats_path):
+            norm_path = self._norm_stats_path
+        else:
+            norm_path = None
+            for candidate in [
+                os.path.join(self.root, "normalization.npz"),
+                os.path.join(self.root, "norm_stats.npz"),
+                str(self._decimated_root / "normalization.npz") if self._decimated_root else None,
+                str(self._decimated_root / "norm_stats.npz") if self._decimated_root else None,
+            ]:
+                if candidate and os.path.isfile(candidate):
+                    norm_path = candidate
+                    break
+        if norm_path is None:
+            raise FileNotFoundError(
+                "Normalization stats not found. Set norm_stats_path or place normalization.npz or norm_stats.npz in root/decimated_root."
+            )
         f = np.load(norm_path)
         if flattop_only:
             self.normalize_mean = f["mean_flat"]
