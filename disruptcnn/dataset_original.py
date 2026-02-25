@@ -96,7 +96,114 @@ def segment_info_for_comparison(
             "segment_length_samples": n_samp,
             "segment_length_ms": n_samp * dt[i],
             "has_flattop": bool(has_flattop[i]),
+            "zero_idx": int(np.ceil((0.0 - tstart[i]) / dt[i])),
         })
+    return out
+
+
+def subsequences_original_tiling(
+    segment: dict,
+    nsub: int = 78125,
+    nrecept: int = 30000,
+    data_step: int = 1,
+) -> List[dict]:
+    """
+    Given one shot's segment info (from segment_info_for_comparison), return the list of
+    subsequences produced by dataset_original's shots2seqs tiling (overlap = nsub - nrecept + 1).
+
+    No H5 or full dataset required. Used to compare "how a shot is turned into subsequences"
+    in the original DisruptCNN (dataset_original) pipeline.
+
+    Returns list of dicts: seq_idx, start, stop, length, has_disrupt, disrupt_local (offset in window or -1).
+    """
+    start_idx = segment["start_idx"]
+    stop_idx = segment["stop_idx"]
+    disrupt_idx = segment["disrupt_idx"]
+    zero_idx = segment.get("zero_idx")
+    if zero_idx is None:
+        tstart = segment["tstart"]
+        dt = segment["dt"]
+        zero_idx = int(np.ceil((0.0 - tstart) / dt))
+
+    N = max(0, int((stop_idx - start_idx + 1) / data_step))
+    num_seq_frac = (N - nsub) / float(nsub - nrecept + 1) + 1
+    num_seq = max(1, int(np.ceil(num_seq_frac)))
+    Nseq = nsub + (num_seq - 1) * (nsub - nrecept + 1)
+    if (start_idx > zero_idx) and ((start_idx - zero_idx + 1) > (Nseq - N) * data_step):
+        start_idx = start_idx - (Nseq - N) * data_step
+    else:
+        num_seq = max(1, num_seq - 1)
+        Nseq = nsub + (num_seq - 1) * (nsub - nrecept + 1)
+        start_idx = start_idx + (N - Nseq) * data_step
+
+    out = []
+    for m in range(num_seq):
+        start = start_idx + (m * nsub - m * nrecept + m) * data_step
+        stop = start_idx + ((m + 1) * nsub - m * nrecept + m) * data_step
+        if start <= disrupt_idx <= stop:
+            has_disrupt = True
+            disrupt_local = disrupt_idx - start
+        else:
+            has_disrupt = False
+            disrupt_local = -1
+        out.append({
+            "seq_idx": m,
+            "start": start,
+            "stop": stop,
+            "length": stop - start,
+            "has_disrupt": has_disrupt,
+            "disrupt_local": disrupt_local,
+        })
+    return out
+
+
+def subsequences_past_tiling(
+    start_idx: int,
+    stop_idx: int,
+    disrupt_idx: int,
+    nsub: int,
+    stride: int,
+    stop_at_last_window_containing_disrupt: bool = True,
+    t_dis_samples: Optional[int] = None,
+) -> List[dict]:
+    """
+    Tile a segment into subsequences the "past" way (ECEiTCNDataset-style): fixed stride,
+    windows [pos, min(pos+nsub, b)], optional cap so last window still contains t_disrupt.
+
+    t_dis_samples: absolute sample index of disruption (disrupt_idx + Twarn). If None, not used for pos_limit.
+    Returns list of dicts: seq_idx, start, stop, length, has_disrupt, disrupt_local.
+    """
+    a, b = start_idx, stop_idx
+    d = disrupt_idx
+    if b - a < 1:
+        return []
+    pos_limit = b
+    if stop_at_last_window_containing_disrupt and d <= b and t_dis_samples is not None:
+        pos_limit = min(b, t_dis_samples + 1)
+    out = []
+    pos = a
+    seq_idx = 0
+    while pos < pos_limit:
+        stop = min(pos + nsub, b)
+        if d <= pos:
+            has_disrupt = True
+            disrupt_local = 0
+        elif d >= stop:
+            has_disrupt = False
+            disrupt_local = -1
+        else:
+            has_disrupt = True
+            disrupt_local = d - pos
+        out.append({
+            "seq_idx": seq_idx,
+            "start": pos,
+            "stop": stop,
+            "length": stop - pos,
+            "has_disrupt": has_disrupt,
+            "disrupt_local": disrupt_local,
+        })
+        pos += stride
+        seq_idx += 1
     return out
 
 
