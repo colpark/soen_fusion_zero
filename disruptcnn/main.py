@@ -270,8 +270,9 @@ def main_worker(gpu,ngpus_per_node,args):
 
     #set defaults for iterations_warmup (5 epochs) and iterations_valid (1 epoch)
     #TODO Add separate argsparse for epochs_warmup and epochs_valid?
-    if args.iterations_warmup is None: args.iterations_warmup = 5*len(train_loader)
-    if args.iterations_valid is None: args.iterations_valid = len(train_loader)
+    n_train = len(train_loader)
+    if args.iterations_warmup is None: args.iterations_warmup = max(1, 5 * n_train)
+    if args.iterations_valid is None: args.iterations_valid = max(1, n_train)
     if args.log_interval is None: 
         if args.test==0:
             args.log_interval = args.iterations_valid
