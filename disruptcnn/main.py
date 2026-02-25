@@ -176,6 +176,7 @@ def main():
 
 def main_worker(gpu,ngpus_per_node,args):
     args.gpu = gpu
+    run_id = os.environ.get('SLURM_JOB_ID', 'local')  # for filenames; use 'local' when not on SLURM
 
     if args.gpu is not None:
         print("Use GPU: {} for training".format(args.gpu))
@@ -348,7 +349,7 @@ def main_worker(gpu,ngpus_per_node,args):
 
     #save the train/val/test split, for further post-processing
     if args.rank==0:
-        np.savez('splits.'+os.environ['SLURM_JOB_ID']+'.npz',
+        np.savez('splits.'+run_id+'.npz',
                     shot=dataset.shot,shot_idxi=dataset.shot_idxi,start_idxi=dataset.start_idxi,stop_idxi=dataset.stop_idxi,
                     disrupted=dataset.disrupted,disruptedi=dataset.disruptedi,
                     train_inds = dataset.train_inds,val_inds = dataset.val_inds, test_inds=dataset.test_inds,
@@ -383,7 +384,7 @@ def main_worker(gpu,ngpus_per_node,args):
                     lr_epoch = [ group['lr'] for group in optimizer.param_groups ][0]
                     lr_history["lr"].append(lr_epoch)
                     lr_history["loss"].append(total_loss)
-                    np.savez('lr_finder_'+str(int(os.environ['SLURM_JOB_ID']))+'.npz',lr=lr_history["lr"],loss=lr_history["loss"])
+                    np.savez('lr_finder_'+run_id+'.npz',lr=lr_history["lr"],loss=lr_history["loss"])
                     total_loss = 0
             else:
                 if iteration < args.iterations_warmup:
@@ -440,7 +441,7 @@ def main_worker(gpu,ngpus_per_node,args):
                         'confusion_matrix': {'TP':TP, 'TN':TN, 'FP':FP, 'FN':FN},
                         'f1': valid_f1,
                         'threshold': threshold,
-                    }, is_best,filename='checkpoint.'+os.environ['SLURM_JOB_ID']+'.pth.tar')
+                    }, is_best,filename='checkpoint.'+run_id+'.pth.tar')
             
 
     print("Main training loop ended")
@@ -457,7 +458,7 @@ def main_worker(gpu,ngpus_per_node,args):
 
                 for (i,gi) in enumerate(global_index):
                     plot_output(data[i,...][np.newaxis,...],output[i,...][np.newaxis,...],target[i,...][np.newaxis,...],weight[i,...][np.newaxis,...],args,
-                           filename='test_output_'+str(int(os.environ['SLURM_JOB_ID']))+'_ind_'+str(global_index.item())+'.png',
+                           filename='test_output_'+run_id+'_ind_'+str(global_index.item())+'.png',
                            title='Loss: %0.4e' % loss)
 
     if args.lr_finder:
@@ -466,8 +467,8 @@ def main_worker(gpu,ngpus_per_node,args):
         plt.xscale('log')
         plt.yscale('log')
         #plt.ylim([np.array(lr_history["loss"]).min(),lr_history["loss"][0]])
-        plt.savefig('lr_finder_'+str(int(os.environ['SLURM_JOB_ID']))+'.png')
-        np.savez('lr_finder_'+str(int(os.environ['SLURM_JOB_ID']))+'.npz',lr=lr_history["lr"],loss=lr_history["loss"])
+        plt.savefig('lr_finder_'+run_id+'.png')
+        np.savez('lr_finder_'+run_id+'.npz',lr=lr_history["lr"],loss=lr_history["loss"])
 
     if is_writer: writer.close()
     time.sleep(180) #allow all processes to finish
@@ -551,7 +552,7 @@ def evaluate(val_loader,model,args):
                 for (i,gi) in enumerate(global_index):
                     if ((val_loader.dataset.dataset.disruptedi[gi]==1)):
                         plot_output(data,output,target,weight,args,
-                                filename='output_'+str(int(os.environ['SLURM_JOB_ID']))+'_iteration_'+str(args.iteration)+'_ind_'+str(int(gi))+'.png',
+                                filename='output_'+run_id+'_iteration_'+str(args.iteration)+'_ind_'+str(int(gi))+'.png',
                                 title='Loss: %0.4e' % float(loss))
 
         total_loss /= len(val_loader)
@@ -612,7 +613,8 @@ def f1_score(TP,TP_FP,TP_FN,eps=1e-10):
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'model_best.'+str(int(os.environ['SLURM_JOB_ID']))+'.pth.tar')
+        run_id = os.environ.get('SLURM_JOB_ID', 'local')
+        shutil.copyfile(filename, 'model_best.'+run_id+'.pth.tar')
 
 
 def create_model(args):
