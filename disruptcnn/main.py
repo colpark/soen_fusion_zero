@@ -349,16 +349,21 @@ def main_worker(gpu,ngpus_per_node,args):
 
     #save the train/val/test split, for further post-processing
     if args.rank==0:
+        def _sampler_indices(loader, name):
+            s = getattr(loader, 'sampler', None)
+            if s is None:
+                return np.array([], dtype=np.int64)
+            return getattr(s, name, np.array([], dtype=np.int64))
         np.savez('splits.'+run_id+'.npz',
                     shot=dataset.shot,shot_idxi=dataset.shot_idxi,start_idxi=dataset.start_idxi,stop_idxi=dataset.stop_idxi,
                     disrupted=dataset.disrupted,disruptedi=dataset.disruptedi,
                     train_inds = dataset.train_inds,val_inds = dataset.val_inds, test_inds=dataset.test_inds,
-                    train_pos_used_indices=train_loader.sampler.pos_used_indices,
-                    train_neg_used_indices=train_loader.sampler.neg_used_indices,
-                    val_pos_used_indices=val_loader.sampler.pos_used_indices,
-                    val_neg_used_indices=val_loader.sampler.neg_used_indices,
-                    test_pos_used_indices=test_loader.sampler.pos_used_indices,
-                    test_neg_used_indices=test_loader.sampler.neg_used_indices)
+                    train_pos_used_indices=_sampler_indices(train_loader, 'pos_used_indices'),
+                    train_neg_used_indices=_sampler_indices(train_loader, 'neg_used_indices'),
+                    val_pos_used_indices=_sampler_indices(val_loader, 'pos_used_indices'),
+                    val_neg_used_indices=_sampler_indices(val_loader, 'neg_used_indices'),
+                    test_pos_used_indices=_sampler_indices(test_loader, 'pos_used_indices'),
+                    test_neg_used_indices=_sampler_indices(test_loader, 'neg_used_indices'))
 
 
     #this autotunes algo on GPU. If variable input (like before with single shot), would
@@ -371,7 +376,8 @@ def main_worker(gpu,ngpus_per_node,args):
     total_loss = 0
     best_acc = 0
     for epoch in range(args.start_epoch, args.epochs):
-        train_loader.sampler.set_epoch(epoch)
+        if hasattr(train_loader.sampler, 'set_epoch'):
+            train_loader.sampler.set_epoch(epoch)
         for batch_idx, (data, target, global_index, weight) in enumerate(train_loader):
             model.train()
             iteration = epoch*len(train_loader) + batch_idx
