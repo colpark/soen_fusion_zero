@@ -426,6 +426,11 @@ class EceiDatasetOriginal(data.Dataset):
         shot = self.shot[shot_index]
         return str(self._path_for_shot(shot, self.disrupted[shot_index]))
 
+    def _file_length(self, shot_index: int) -> int:
+        """Length of LFS (last dim) for the given shot index into self.shot."""
+        with h5py.File(self._filename(shot_index), "r") as f:
+            return int(f["LFS"].shape[-1])
+
     def shots2seqs(self) -> None:
         self.shot_idxi = []
         self.start_idxi = []
@@ -433,6 +438,7 @@ class EceiDatasetOriginal(data.Dataset):
         self.disrupt_idxi = []
         step = self._step_in_getitem
         for s in range(len(self.shot)):
+            file_len = self._file_length(s)
             N = int((self.stop_idx[s] - self.start_idx[s] + 1) / step)
             num_seq_frac = (N - self.nsub) / float(self.nsub - self.nrecept + 1) + 1
             num_seq = max(1, int(np.ceil(num_seq_frac)))
@@ -448,14 +454,19 @@ class EceiDatasetOriginal(data.Dataset):
                 Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
                 self.start_idx[s] += (N - Nseq) * step
             for m in range(num_seq):
-                self.shot_idxi.append(s)
-                self.start_idxi.append(
+                start_i = int(
                     self.start_idx[s] + (m * self.nsub - m * self.nrecept + m) * step
                 )
-                self.stop_idxi.append(
+                stop_i = int(
                     self.start_idx[s] + ((m + 1) * self.nsub - m * self.nrecept + m) * step
                 )
-                if self.start_idxi[-1] <= self.disrupt_idx[s] <= self.stop_idxi[-1]:
+                # Skip sequences that extend past file or are too short for the model
+                if start_i >= file_len or stop_i > file_len or (stop_i - start_i) < self.nrecept:
+                    continue
+                self.shot_idxi.append(s)
+                self.start_idxi.append(start_i)
+                self.stop_idxi.append(stop_i)
+                if start_i <= self.disrupt_idx[s] <= stop_i:
                     self.disrupt_idxi.append(self.disrupt_idx[s])
                 else:
                     self.disrupt_idxi.append(-1000)
@@ -522,8 +533,11 @@ class EceiDatasetOriginal(data.Dataset):
         with h5py.File(filename, "r") as f:
             if np.all(self.offsets[..., shot_index] == 0):
                 self.offsets[..., shot_index] = f["offsets"][...]
+            T_file = f["LFS"].shape[-1]
+            start = int(np.clip(self.start_idxi[index], 0, T_file - 1))
+            stop = int(np.clip(self.stop_idxi[index], start + 1, T_file))
             X = (
-                f["LFS"][..., self.start_idxi[index] : self.stop_idxi[index]][..., :: self._step_in_getitem]
+                f["LFS"][..., start:stop][..., :: self._step_in_getitem]
                 - self.offsets[..., shot_index][..., np.newaxis]
             )
         if self.normalize:
