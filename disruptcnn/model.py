@@ -1,6 +1,6 @@
 import torch.nn.functional as F
 from torch import nn
-from tcn import TemporalConvNet
+from disruptcnn.tcn import TemporalConvNet
 import torch
 
 class TCN(nn.Module):
