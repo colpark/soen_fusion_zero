@@ -345,9 +345,7 @@ def main_worker(gpu,ngpus_per_node,args):
                     val_pos_used_indices=val_loader.sampler.pos_used_indices,
                     val_neg_used_indices=val_loader.sampler.neg_used_indices,
                     test_pos_used_indices=test_loader.sampler.pos_used_indices,
-                    test_neg_used_indices=test_loader.sampler.neg_used_indices,
-                    test_pos_used_indices=dataset.test_inds[dataset.disruptedi[dataset.test_inds]==1],
-                    test_neg_used_indices=dataset.test_inds[dataset.disruptedi[dataset.test_inds]==0])
+                    test_neg_used_indices=test_loader.sampler.neg_used_indices)
 
 
     #this autotunes algo on GPU. If variable input (like before with single shot), would
