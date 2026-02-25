@@ -297,16 +297,18 @@ class EceiDatasetOriginal(data.Dataset):
         nsub: Optional[int] = None,
         nrecept: Optional[int] = None,
         snr_min_threshold: Optional[float] = None,
+        decimated_root: Optional[str] = None,
     ):
         self.root = root
+        self._decimated_root = Path(decimated_root) if decimated_root and str(decimated_root).strip() else None
         self.train = train
         self.Twarn = Twarn
         self.test = test
         self.label_balance = label_balance
         self.normalize = normalize
         self.data_step = data_step
-        self.nsub = nsub if nsub is not None else 78125
-        self.nrecept = nrecept if nrecept is not None else 30000
+        _nsub = nsub if nsub is not None else 78125
+        _nrecept = nrecept if nrecept is not None else 30000
 
         (
             self.shot,
@@ -320,11 +322,37 @@ class EceiDatasetOriginal(data.Dataset):
 
         self.length = len(self.shot)
 
+        # When using decimated H5, indices and window sizes are in raw (1 MHz) space; convert to decimated
+        if self._decimated_root is not None:
+            self.start_idx = (self.start_idx // self.data_step).astype(np.int64)
+            self.stop_idx = (self.stop_idx // self.data_step).astype(np.int64)
+            nondisrupt = self.disrupt_idx < 0  # -1000 for clear
+            self.disrupt_idx = (self.disrupt_idx // self.data_step).astype(np.int64)
+            self.disrupt_idx[nondisrupt] = -1000
+            self.zero_idx = (self.zero_idx // self.data_step).astype(np.int64)
+            self._step_in_getitem = 1
+            self.nsub = max(1, _nsub // self.data_step)
+            self.nrecept = max(1, _nrecept // self.data_step)
+        else:
+            self._step_in_getitem = self.data_step
+            self.nsub = _nsub
+            self.nrecept = _nrecept
+
         filename = self._filename(0)
         with h5py.File(filename, "r") as f:
-            self.offsets = np.zeros(f["offsets"].shape + (self.shot.size,), dtype=f["offsets"].dtype)
+            if "offsets" in f:
+                self.offsets = np.zeros(f["offsets"].shape + (self.shot.size,), dtype=f["offsets"].dtype)
+            else:
+                # Decimated data often has offset already removed; use zeros
+                LFS = f["LFS"]
+                base = np.zeros((LFS.shape[0], LFS.shape[1], self.shot.size), dtype=np.float64)
+                self.offsets = base
 
         norm_path = os.path.join(self.root, "normalization.npz")
+        if not os.path.isfile(norm_path) and self._decimated_root is not None:
+            alt = self._decimated_root / "normalization.npz"
+            if alt.exists():
+                norm_path = str(alt)
         f = np.load(norm_path)
         if flattop_only:
             self.normalize_mean = f["mean_flat"]
@@ -355,6 +383,8 @@ class EceiDatasetOriginal(data.Dataset):
 
     def _filename(self, shot_index: int) -> str:
         shot = self.shot[shot_index]
+        if self._decimated_root is not None:
+            return str(self._decimated_root / f"{shot}.h5")
         folder = "disrupt" if self.disrupted[shot_index] else "clear"
         return os.path.join(self.root, folder, f"{shot}.h5")
 
@@ -363,28 +393,29 @@ class EceiDatasetOriginal(data.Dataset):
         self.start_idxi = []
         self.stop_idxi = []
         self.disrupt_idxi = []
+        step = self._step_in_getitem
         for s in range(len(self.shot)):
-            N = int((self.stop_idx[s] - self.start_idx[s] + 1) / self.data_step)
+            N = int((self.stop_idx[s] - self.start_idx[s] + 1) / step)
             num_seq_frac = (N - self.nsub) / float(self.nsub - self.nrecept + 1) + 1
             num_seq = max(1, int(np.ceil(num_seq_frac)))
             Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
             if (self.start_idx[s] > self.zero_idx[s]) and (
-                (self.start_idx[s] - self.zero_idx[s] + 1) > (Nseq - N) * self.data_step
+                (self.start_idx[s] - self.zero_idx[s] + 1) > (Nseq - N) * step
             ):
-                self.start_idx[s] -= (Nseq - N) * self.data_step
+                self.start_idx[s] -= (Nseq - N) * step
             else:
                 num_seq -= 1
                 if num_seq < 1:
                     num_seq = 1
                 Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
-                self.start_idx[s] += (N - Nseq) * self.data_step
+                self.start_idx[s] += (N - Nseq) * step
             for m in range(num_seq):
                 self.shot_idxi.append(s)
                 self.start_idxi.append(
-                    self.start_idx[s] + (m * self.nsub - m * self.nrecept + m) * self.data_step
+                    self.start_idx[s] + (m * self.nsub - m * self.nrecept + m) * step
                 )
                 self.stop_idxi.append(
-                    self.start_idx[s] + ((m + 1) * self.nsub - m * self.nrecept + m) * self.data_step
+                    self.start_idx[s] + ((m + 1) * self.nsub - m * self.nrecept + m) * step
                 )
                 if self.start_idxi[-1] <= self.disrupt_idx[s] <= self.stop_idxi[-1]:
                     self.disrupt_idxi.append(self.disrupt_idx[s])
@@ -454,7 +485,7 @@ class EceiDatasetOriginal(data.Dataset):
             if np.all(self.offsets[..., shot_index] == 0):
                 self.offsets[..., shot_index] = f["offsets"][...]
             X = (
-                f["LFS"][..., self.start_idxi[index] : self.stop_idxi[index]][..., :: self.data_step]
+                f["LFS"][..., self.start_idxi[index] : self.stop_idxi[index]][..., :: self._step_in_getitem]
                 - self.offsets[..., shot_index][..., np.newaxis]
             )
         if self.normalize:
@@ -473,7 +504,7 @@ class EceiDatasetOriginal(data.Dataset):
         target = np.zeros((X.shape[-1],), dtype=X.dtype)
         weight = self.neg_weight * np.ones((X.shape[-1],), dtype=X.dtype)
         if self.disruptedi[idx]:
-            first_disrupt = int((self.disrupt_idxi[idx] - self.start_idxi[idx] + 1) / self.data_step)
+            first_disrupt = int((self.disrupt_idxi[idx] - self.start_idxi[idx] + 1) / self._step_in_getitem)
             target[first_disrupt:] = 1
             weight[first_disrupt:] = self.pos_weight
         return (

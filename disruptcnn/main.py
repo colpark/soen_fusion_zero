@@ -122,6 +122,8 @@ parser.add_argument('--disrupt-only', action='store_true',
                     help='use only disrupt shot list (no clear shots). Use with --use-original-dataloader when clear list is not in the original data.')
 parser.add_argument('--no-disrupt-only', action='store_true',
                     help='use both disrupt and clear shot lists (cancel disrupt-only when using train_original).')
+parser.add_argument('--decimated-root', default=None, type=str,
+                    help='directory with decimated H5 files ({shot}.h5). Use this instead of data_root/disrupt/ when data is pre-decimated.')
 
 
 root = '/scratch/gpfs/rmc2/ecei_d3d/'
@@ -241,7 +243,8 @@ def main_worker(gpu,ngpus_per_node,args):
                           normalize=(not args.no_normalize),
                           data_step=args.data_step,
                           nsub=args.nsub, nrecept=args.nrecept,
-                          flattop_only=args.flattop_only)
+                          flattop_only=args.flattop_only,
+                          decimated_root=getattr(args, 'decimated_root', None))
         dataset.train_val_test_split()
         train_loader, val_loader, test_loader = data_generator_original(dataset, args.batch_size,
                                                             distributed=args.distributed,

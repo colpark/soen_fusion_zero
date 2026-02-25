@@ -9,7 +9,7 @@ By default uses **disrupt data only** (no clear shot list), since clear is not i
 
 Usage (from soen_fusion_zero project root or with PYTHONPATH):
   python -m disruptcnn.train_original [OPTIONS]
-  python -m disruptcnn.train_original --data-root /path/to/data --disrupt-file disruptcnn/shots/d3d_disrupt_ecei.final.txt
+  python -m disruptcnn.train_original --data-root /path/to/ecei --decimated-root /path/to/ecei/dsrpt_decimated --disrupt-file disruptcnn/shots/d3d_disrupt_ecei.final.txt
 
 Options: same as main.py (--epochs, --batch-size, --flattop-only, etc.).
   --disrupt-only is added by default; pass --no-disrupt-only to use a clear list if you have one.
