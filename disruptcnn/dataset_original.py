@@ -453,6 +453,7 @@ class EceiDatasetOriginal(data.Dataset):
                     num_seq = 1
                 Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
                 self.start_idx[s] += (N - Nseq) * step
+            added_for_shot = False
             for m in range(num_seq):
                 start_i = int(
                     self.start_idx[s] + (m * self.nsub - m * self.nrecept + m) * step
@@ -463,6 +464,18 @@ class EceiDatasetOriginal(data.Dataset):
                 # Skip sequences that extend past file or are too short for the model
                 if start_i >= file_len or stop_i > file_len or (stop_i - start_i) < self.nrecept:
                     continue
+                self.shot_idxi.append(s)
+                self.start_idxi.append(start_i)
+                self.stop_idxi.append(stop_i)
+                if start_i <= self.disrupt_idx[s] <= stop_i:
+                    self.disrupt_idxi.append(self.disrupt_idx[s])
+                else:
+                    self.disrupt_idxi.append(-1000)
+                added_for_shot = True
+            # If file is shorter than nsub (e.g. decimated segment), add one sequence from the tail
+            if not added_for_shot and file_len >= self.nrecept:
+                start_i = max(0, file_len - self.nsub)
+                stop_i = file_len
                 self.shot_idxi.append(s)
                 self.start_idxi.append(start_i)
                 self.stop_idxi.append(stop_i)
