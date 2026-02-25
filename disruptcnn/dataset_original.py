@@ -320,6 +320,23 @@ class EceiDatasetOriginal(data.Dataset):
             self.zero_idx,
         ) = _parse_shot_lists(disrupt_file, clear_file or None, flattop_only, snr_min_threshold)
 
+        # Keep only shots whose H5 file actually exists (not all shot list entries may be available)
+        available = np.array([
+            self._path_for_shot(self.shot[i], self.disrupted[i]).exists()
+            for i in range(len(self.shot))
+        ], dtype=bool)
+        if not np.all(available):
+            n_dropped = int((~available).sum())
+            self.shot = self.shot[available]
+            self.start_idx = self.start_idx[available]
+            self.stop_idx = self.stop_idx[available]
+            self.disrupt_idx = self.disrupt_idx[available]
+            self.disrupted = self.disrupted[available]
+            self.zero_idx = self.zero_idx[available]
+            print(f"[EceiDatasetOriginal] Using only shots with available H5: {len(self.shot)} kept, {n_dropped} dropped (no file).")
+        if len(self.shot) == 0:
+            raise FileNotFoundError("No H5 files found for any shot in the list. Check data_root/decimated_root and shot list.")
+
         self.length = len(self.shot)
 
         # When using decimated H5, indices and window sizes are in raw (1 MHz) space; convert to decimated
@@ -381,12 +398,16 @@ class EceiDatasetOriginal(data.Dataset):
                     self.test_indices = np.array(test_indices)
             self.length = len(self.test_indices)
 
+    def _path_for_shot(self, shot: int, is_disrupt: bool) -> Path:
+        """Path to H5 for a given shot (for existence check)."""
+        if self._decimated_root is not None:
+            return self._decimated_root / f"{shot}.h5"
+        folder = "disrupt" if is_disrupt else "clear"
+        return Path(self.root) / folder / f"{shot}.h5"
+
     def _filename(self, shot_index: int) -> str:
         shot = self.shot[shot_index]
-        if self._decimated_root is not None:
-            return str(self._decimated_root / f"{shot}.h5")
-        folder = "disrupt" if self.disrupted[shot_index] else "clear"
-        return os.path.join(self.root, folder, f"{shot}.h5")
+        return str(self._path_for_shot(shot, self.disrupted[shot_index]))
 
     def shots2seqs(self) -> None:
         self.shot_idxi = []
