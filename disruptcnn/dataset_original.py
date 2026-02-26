@@ -8,6 +8,8 @@ This module implements the original recipe only:
 - Twarn = 300 ms: label as disruptive from sample index disrupt_idx = ceil((tdisrupt - Twarn - tstart) / dt) to end of segment.
 - All indices are in "sample space" (tstart = 0 at index 0, dt per sample).
 
+Four areas aligned with soenre/disruptcnn/loader.EceiDataset: (1) Clear file required, data_all = vstack(disrupt, clear); (2) shots2seqs same formulas and window loop, no file-length skip/tail; (3) _read_data exact slice, no clamping; (4) calc_label_weights over sequence indices with safe division.
+
 Use this dataloader for training that exactly matches the original DisruptCNN setting.
 """
 
@@ -108,6 +110,7 @@ def _parse_shot_lists(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Parse disrupt and clear shot list files and compute per-shot segment indices.
+    clear_file is required; original behavior uses data_all = vstack(disrupt, clear).
 
     Returns:
         shot: (N,) shot numbers
@@ -118,6 +121,8 @@ def _parse_shot_lists(
         dt: (N,) timestep in ms (for reference)
         zero_idx: (N,) sample index corresponding to t=0 (for compatibility)
     """
+    if not clear_file or not disrupt_file:
+        raise ValueError("clear_file and disrupt_file are required.")
     data_disrupt = np.loadtxt(disrupt_file, skiprows=1)
     data_clear = np.loadtxt(clear_file, skiprows=1)
     data_all = np.vstack((data_disrupt, data_clear))
@@ -191,6 +196,7 @@ class EceiDatasetOriginal(data.Dataset):
         """
         root: Data root with 'disrupt/', 'clear/', and normalization.npz.
         clear_file, disrupt_file: Paths to shot list .txt (tab/space separated, header row).
+            clear_file is required (original behavior: data_all = vstack(disrupt, clear)).
         flattop_only: If True, use only flattop window and drop shots with NaN t_flat_start.
         Twarn: Time (ms) before tdisrupt at which to start labeling as disruptive (default 300).
         test, test_indices: Overfit test setup (subset of data).
@@ -208,6 +214,9 @@ class EceiDatasetOriginal(data.Dataset):
         self.data_step = data_step
         self.nsub = nsub if nsub is not None else 78125
         self.nrecept = nrecept if nrecept is not None else 30000
+
+        if not clear_file or not disrupt_file:
+            raise ValueError("clear_file and disrupt_file are required for original DisruptCNN behavior.")
 
         (
             self.shot,
@@ -270,7 +279,9 @@ class EceiDatasetOriginal(data.Dataset):
         for s in range(len(self.shot)):
             N = int((self.stop_idx[s] - self.start_idx[s] + 1) / self.data_step)
             num_seq_frac = (N - self.nsub) / float(self.nsub - self.nrecept + 1) + 1
-            num_seq = max(1, int(np.ceil(num_seq_frac)))
+            num_seq = np.ceil(num_seq_frac).astype(int)
+            if num_seq < 1:
+                num_seq = 1
             Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
             if (self.start_idx[s] > self.zero_idx[s]) and (
                 (self.start_idx[s] - self.zero_idx[s] + 1) > (Nseq - N) * self.data_step
@@ -278,8 +289,6 @@ class EceiDatasetOriginal(data.Dataset):
                 self.start_idx[s] -= (Nseq - N) * self.data_step
             else:
                 num_seq -= 1
-                if num_seq < 1:
-                    num_seq = 1
                 Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
                 self.start_idx[s] += (N - Nseq) * self.data_step
             for m in range(num_seq):
@@ -303,6 +312,7 @@ class EceiDatasetOriginal(data.Dataset):
             self.length = len(self.shot_idxi)
 
     def calc_label_weights(self, inds: Optional[np.ndarray] = None) -> None:
+        """Weights for BCE; inds are sequence indices (default all). Safe division (max(..., 1))."""
         if inds is None:
             inds = np.arange(len(self.shot_idxi))
         if "const" in self.label_balance:
@@ -352,6 +362,7 @@ class EceiDatasetOriginal(data.Dataset):
         self.calc_label_weights(inds=self.train_inds)
 
     def _read_data(self, index: int) -> np.ndarray:
+        """Read LFS slice [start_idxi:stop_idxi] with step data_step; no clamping (matches original)."""
         shot_index = self.shot_idxi[index]
         filename = self._filename(shot_index)
         with h5py.File(filename, "r") as f:
