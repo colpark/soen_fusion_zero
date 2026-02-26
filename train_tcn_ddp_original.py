@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Distributed TCN training with original DisruptCNN-style dataset (shot lists, flattop, clear+disrupt).
+Distributed TCN training with original DisruptCNN-style dataset (shot lists, flattop; clear_file optional, disrupt-only if omitted).
 
 Same model and training loop as train_tcn_ddp.py, but uses EceiDatasetOriginal (shot-list
 segment logic, decimated H5, norm_stats from project). Intended to be run via:
@@ -526,14 +526,13 @@ def main():
     model = model.to(device)
     model = DDP(model, device_ids=[local_rank])
 
-    # ── Dataset: original DisruptCNN-style (shot list, flattop, clear+disrupt, decimated) ─
-    # nrecept in raw space for dataset (it converts to decimated internally)
+    # ── Dataset: original DisruptCNN-style (shot list, flattop; clear_file optional → disrupt-only if omitted) ─
     nrecept_raw = nrecept * args.data_step
     clear_file = args.clear_file
+    if clear_file and str(clear_file).strip() and not Path(clear_file).exists():
+        clear_file = None  # treat missing file as disrupt-only
     if not clear_file or not str(clear_file).strip():
-        clear_file = str(Path(args.disrupt_file).parent / 'd3d_clear_ecei.final.txt')
-    if not Path(clear_file).exists():
-        raise FileNotFoundError(f'clear_file required for original dataset; not found: {clear_file}. Use --clear-file.')
+        clear_file = None
     inner_ds = EceiDatasetOriginal(
         root=args.root,
         disrupt_file=args.disrupt_file,
@@ -548,8 +547,8 @@ def main():
     )
     ds = OriginalStyleDatasetForDDP(inner_ds)
     if rank == 0:
-        log(rank, f'  Original-style dataset: {len(ds)} sequences '
-                  f'(disrupt-only, flattop_only={args.flattop_only})')
+        mode = 'disrupt+clear' if clear_file else 'disrupt-only'
+        log(rank, f'  Original-style dataset: {len(ds)} sequences ({mode}, flattop_only={args.flattop_only})')
     train_idx = ds.get_split_indices('train')
     val_idx = ds.get_split_indices('test')
     if len(val_idx) == 0:

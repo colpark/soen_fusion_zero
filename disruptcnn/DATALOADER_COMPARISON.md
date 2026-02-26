@@ -9,7 +9,7 @@
 
 | Area | Status | Detail |
 |------|--------|--------|
-| **Clear file** | ✓ Correct | **Required:** `clear_file` and `disrupt_file` must be set; `data_all = np.vstack((data_disrupt, data_clear))`. Raises if clear_file is missing. |
+| **Clear file** | ✓ Correct | **Optional:** when `clear_file` is provided and exists, `data_all = np.vstack((data_disrupt, data_clear))`. When omitted or missing → disrupt-only (`data_all = data_disrupt`). |
 | **shots2seqs** | ✓ Correct | Same formulas as original: N, num_seq, Nseq, start adjustment, window loop. No `_file_length`, no skip by file length, no tail fallback. `num_seq` can go to 0 in else branch (matches original). |
 | **_read_data** | ✓ Correct | Exact slice `LFS[..., start_idxi[index]:stop_idxi[index]][..., ::step]`; no clamping. Offset subtract and normalize same as original. |
 | **calc_label_weights** | ✓ Correct | `inds=None` → `np.arange(len(self.shot_idxi))` (sequence-level). Same N, Ndisrupt, Nnondisrupt formula; `max(..., 1)` to avoid division by zero. |
@@ -20,7 +20,7 @@
 
 | Aspect | Original (soenre loader.py) | Current (dataset_original.py) |
 |--------|-----------------------------|-------------------------------|
-| **Clear file** | Required: `data_clear = np.loadtxt(clear_file, skiprows=1)`, then `data_all = np.vstack((data_disrupt, data_clear))` | Same: clear_file required; `data_all = np.vstack((data_disrupt, data_clear))`; raises if clear_file missing. |
+| **Clear file** | Required: `data_clear = np.loadtxt(clear_file, skiprows=1)`, then `data_all = np.vstack((data_disrupt, data_clear))` | Optional: if `clear_file` provided and exists, same vstack; else disrupt-only (`data_all = data_disrupt`). |
 | **Single-row shot list** | `if data.ndim == 1` not handled (would fail or behave oddly) | `data_disrupt.ndim == 1` → `data_disrupt = data_disrupt[np.newaxis, :]`. |
 | **SNR filter** | `snr_min_threshold` in __init__; filters with `data_all = data_all[keep]` before computing indices. | Same: `snr_min_threshold` in `_parse_shot_lists`, same filter. |
 | **Column indices** | Hardcoded: `data_all[:,-3]`, `data_all[:,-2]`, `[:,2]`, `[:,3]`, `[:,4]`, `[:,-1]` (t_flat_start, t_flat_last, tstart, tlast, dt, tdisrupt). | Named: `COL_T_FLAT_START=6`, `COL_T_FLAT_LAST=7`, `COL_TSTART=2`, etc. (same logical columns, 0-based). |

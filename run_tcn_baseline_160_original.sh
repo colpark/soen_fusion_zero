@@ -4,7 +4,7 @@
 #
 #  Same model and training as run_tcn_baseline_160.sh, but uses:
 #  - EceiDatasetOriginal (shot list, segment logic, decimated H5)
-#  - clear + disrupt shot lists (--clear-file or default disruptcnn/shots/d3d_clear_ecei.final.txt)
+#  - disrupt-only by default; use --clear-file for clear+disrupt if you have a clear shot list
 #  - norm_stats.npz from project root (soen_fusion_zero/norm_stats.npz)
 #
 #  Usage:

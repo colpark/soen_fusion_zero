@@ -8,7 +8,7 @@ This module implements the original recipe only:
 - Twarn = 300 ms: label as disruptive from sample index disrupt_idx = ceil((tdisrupt - Twarn - tstart) / dt) to end of segment.
 - All indices are in "sample space" (tstart = 0 at index 0, dt per sample).
 
-Four areas aligned with soenre/disruptcnn/loader.EceiDataset: (1) Clear file required, data_all = vstack(disrupt, clear); (2) shots2seqs same formulas and window loop, no file-length skip/tail; (3) _read_data exact slice, no clamping; (4) calc_label_weights over sequence indices with safe division.
+Segment/tiling/read/weights match original: (1) clear_file optional; when provided, data_all = vstack(disrupt, clear), else disrupt-only. (2) shots2seqs same formulas, no file-length skip/tail. (3) _read_data exact slice, no clamping. (4) calc_label_weights over sequence indices with safe division.
 
 Use this dataloader for training that exactly matches the original DisruptCNN setting.
 """
@@ -212,28 +212,29 @@ def subsequences_past_tiling(
 
 def _parse_shot_lists(
     disrupt_file: str,
-    clear_file: str,
+    clear_file: Optional[str],
     flattop_only: bool,
     snr_min_threshold: Optional[float],
 ) -> tuple:
     """
-    Parse disrupt and clear shot list files and compute per-shot segment indices.
-    clear_file is required; original behavior uses data_all = vstack(disrupt, clear).
+    Parse disrupt (and optionally clear) shot list files and compute per-shot segment indices.
+    If clear_file is provided and exists, data_all = vstack(disrupt, clear). Else disrupt-only.
 
     Returns:
         shot, start_idx, stop_idx, disrupt_idx, disrupted, dt, zero_idx
     """
-    if not clear_file or not str(clear_file).strip():
-        raise ValueError("clear_file is required for original DisruptCNN behavior.")
     if not disrupt_file or not str(disrupt_file).strip():
         raise ValueError("disrupt_file is required.")
     data_disrupt = np.loadtxt(disrupt_file, skiprows=1)
     if data_disrupt.ndim == 1:
         data_disrupt = data_disrupt[np.newaxis, :]
-    data_clear = np.loadtxt(clear_file, skiprows=1)
-    if data_clear.ndim == 1:
-        data_clear = data_clear[np.newaxis, :]
-    data_all = np.vstack((data_disrupt, data_clear))
+    if clear_file and str(clear_file).strip() and Path(clear_file).exists():
+        data_clear = np.loadtxt(clear_file, skiprows=1)
+        if data_clear.ndim == 1:
+            data_clear = data_clear[np.newaxis, :]
+        data_all = np.vstack((data_disrupt, data_clear))
+    else:
+        data_all = data_disrupt
 
     if snr_min_threshold is not None:
         snr_min = data_all[:, COL_SNR_MIN].astype(float)
@@ -286,7 +287,7 @@ class EceiDatasetOriginal(data.Dataset):
     def __init__(
         self,
         root: str,
-        clear_file: str,
+        clear_file: Optional[str],
         disrupt_file: str,
         train: bool = True,
         flattop_only: bool = True,
