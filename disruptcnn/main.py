@@ -237,8 +237,9 @@ def main_worker(gpu,ngpus_per_node,args):
 
     print(args)
     if getattr(args, 'use_original_dataloader', False):
-        if getattr(args, 'disrupt_only', False) and not getattr(args, 'no_disrupt_only', False):
-            use_clear_file = None  # disrupt-only: no clear shot list
+        # Original dataset requires clear_file (data_all = vstack(disrupt, clear))
+        if not use_clear_file or not str(use_clear_file).strip():
+            raise ValueError('clear_file is required for --use-original-dataloader. Set --clear-file or use default data root with clear list.')
         from disruptcnn.dataset_original import EceiDatasetOriginal, data_generator_original
         dataset = EceiDatasetOriginal(use_data_root, use_clear_file, use_disrupt_file,
                           test=args.test, test_indices=args.test_indices,

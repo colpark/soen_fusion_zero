@@ -8,6 +8,8 @@ This module implements the original recipe only:
 - Twarn = 300 ms: label as disruptive from sample index disrupt_idx = ceil((tdisrupt - Twarn - tstart) / dt) to end of segment.
 - All indices are in "sample space" (tstart = 0 at index 0, dt per sample).
 
+Four areas aligned with soenre/disruptcnn/loader.EceiDataset: (1) Clear file required, data_all = vstack(disrupt, clear); (2) shots2seqs same formulas and window loop, no file-length skip/tail; (3) _read_data exact slice, no clamping; (4) calc_label_weights over sequence indices with safe division.
+
 Use this dataloader for training that exactly matches the original DisruptCNN setting.
 """
 
@@ -210,28 +212,28 @@ def subsequences_past_tiling(
 
 def _parse_shot_lists(
     disrupt_file: str,
-    clear_file: Optional[str],
+    clear_file: str,
     flattop_only: bool,
     snr_min_threshold: Optional[float],
 ) -> tuple:
     """
-    Parse disrupt (and optionally clear) shot list files and compute per-shot segment indices.
-
-    If clear_file is None or empty, only disrupt shots are used (disrupt-only training).
+    Parse disrupt and clear shot list files and compute per-shot segment indices.
+    clear_file is required; original behavior uses data_all = vstack(disrupt, clear).
 
     Returns:
         shot, start_idx, stop_idx, disrupt_idx, disrupted, dt, zero_idx
     """
+    if not clear_file or not str(clear_file).strip():
+        raise ValueError("clear_file is required for original DisruptCNN behavior.")
+    if not disrupt_file or not str(disrupt_file).strip():
+        raise ValueError("disrupt_file is required.")
     data_disrupt = np.loadtxt(disrupt_file, skiprows=1)
     if data_disrupt.ndim == 1:
         data_disrupt = data_disrupt[np.newaxis, :]
-    if clear_file and str(clear_file).strip() and Path(clear_file).exists():
-        data_clear = np.loadtxt(clear_file, skiprows=1)
-        if data_clear.ndim == 1:
-            data_clear = data_clear[np.newaxis, :]
-        data_all = np.vstack((data_disrupt, data_clear))
-    else:
-        data_all = data_disrupt
+    data_clear = np.loadtxt(clear_file, skiprows=1)
+    if data_clear.ndim == 1:
+        data_clear = data_clear[np.newaxis, :]
+    data_all = np.vstack((data_disrupt, data_clear))
 
     if snr_min_threshold is not None:
         snr_min = data_all[:, COL_SNR_MIN].astype(float)
@@ -284,7 +286,7 @@ class EceiDatasetOriginal(data.Dataset):
     def __init__(
         self,
         root: str,
-        clear_file: Optional[str],
+        clear_file: str,
         disrupt_file: str,
         train: bool = True,
         flattop_only: bool = True,
@@ -320,7 +322,7 @@ class EceiDatasetOriginal(data.Dataset):
             self.disrupted,
             _dt,
             self.zero_idx,
-        ) = _parse_shot_lists(disrupt_file, clear_file or None, flattop_only, snr_min_threshold)
+        ) = _parse_shot_lists(disrupt_file, clear_file, flattop_only, snr_min_threshold)
 
         # Keep only shots whose H5 file actually exists (not all shot list entries may be available)
         available = np.array([
@@ -426,22 +428,19 @@ class EceiDatasetOriginal(data.Dataset):
         shot = self.shot[shot_index]
         return str(self._path_for_shot(shot, self.disrupted[shot_index]))
 
-    def _file_length(self, shot_index: int) -> int:
-        """Length of LFS (last dim) for the given shot index into self.shot."""
-        with h5py.File(self._filename(shot_index), "r") as f:
-            return int(f["LFS"].shape[-1])
-
     def shots2seqs(self) -> None:
+        """Build per-subsequence indices; same formulas as original loader (no file-length skip/tail)."""
         self.shot_idxi = []
         self.start_idxi = []
         self.stop_idxi = []
         self.disrupt_idxi = []
         step = self._step_in_getitem
         for s in range(len(self.shot)):
-            file_len = self._file_length(s)
             N = int((self.stop_idx[s] - self.start_idx[s] + 1) / step)
             num_seq_frac = (N - self.nsub) / float(self.nsub - self.nrecept + 1) + 1
-            num_seq = max(1, int(np.ceil(num_seq_frac)))
+            num_seq = np.ceil(num_seq_frac).astype(int)
+            if num_seq < 1:
+                num_seq = 1
             Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
             if (self.start_idx[s] > self.zero_idx[s]) and (
                 (self.start_idx[s] - self.zero_idx[s] + 1) > (Nseq - N) * step
@@ -449,11 +448,8 @@ class EceiDatasetOriginal(data.Dataset):
                 self.start_idx[s] -= (Nseq - N) * step
             else:
                 num_seq -= 1
-                if num_seq < 1:
-                    num_seq = 1
                 Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
                 self.start_idx[s] += (N - Nseq) * step
-            added_for_shot = False
             for m in range(num_seq):
                 start_i = int(
                     self.start_idx[s] + (m * self.nsub - m * self.nrecept + m) * step
@@ -461,21 +457,6 @@ class EceiDatasetOriginal(data.Dataset):
                 stop_i = int(
                     self.start_idx[s] + ((m + 1) * self.nsub - m * self.nrecept + m) * step
                 )
-                # Skip sequences that extend past file or are too short for the model
-                if start_i >= file_len or stop_i > file_len or (stop_i - start_i) < self.nrecept:
-                    continue
-                self.shot_idxi.append(s)
-                self.start_idxi.append(start_i)
-                self.stop_idxi.append(stop_i)
-                if start_i <= self.disrupt_idx[s] <= stop_i:
-                    self.disrupt_idxi.append(self.disrupt_idx[s])
-                else:
-                    self.disrupt_idxi.append(-1000)
-                added_for_shot = True
-            # If file is shorter than nsub (e.g. decimated segment), add one sequence from the tail
-            if not added_for_shot and file_len >= self.nrecept:
-                start_i = max(0, file_len - self.nsub)
-                stop_i = file_len
                 self.shot_idxi.append(s)
                 self.start_idxi.append(start_i)
                 self.stop_idxi.append(stop_i)
@@ -492,6 +473,7 @@ class EceiDatasetOriginal(data.Dataset):
             self.length = len(self.shot_idxi)
 
     def calc_label_weights(self, inds: Optional[np.ndarray] = None) -> None:
+        """Weights for BCE; inds are sequence indices (default all). Safe division (max(..., 1))."""
         if inds is None:
             inds = np.arange(len(self.shot_idxi))
         if "const" in self.label_balance:
@@ -541,16 +523,14 @@ class EceiDatasetOriginal(data.Dataset):
         self.calc_label_weights(inds=self.train_inds)
 
     def _read_data(self, index: int) -> np.ndarray:
+        """Read LFS slice [start_idxi:stop_idxi] with step; no clamping (matches original)."""
         shot_index = self.shot_idxi[index]
         filename = self._filename(shot_index)
         with h5py.File(filename, "r") as f:
             if np.all(self.offsets[..., shot_index] == 0):
                 self.offsets[..., shot_index] = f["offsets"][...]
-            T_file = f["LFS"].shape[-1]
-            start = int(np.clip(self.start_idxi[index], 0, T_file - 1))
-            stop = int(np.clip(self.stop_idxi[index], start + 1, T_file))
             X = (
-                f["LFS"][..., start:stop][..., :: self._step_in_getitem]
+                f["LFS"][..., self.start_idxi[index] : self.stop_idxi[index]][..., :: self._step_in_getitem]
                 - self.offsets[..., shot_index][..., np.newaxis]
             )
         if self.normalize:

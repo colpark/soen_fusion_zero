@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Distributed TCN training with original DisruptCNN-style dataset (shot lists, flattop, disrupt-only).
+Distributed TCN training with original DisruptCNN-style dataset (shot lists, flattop, clear+disrupt).
 
 Same model and training loop as train_tcn_ddp.py, but uses EceiDatasetOriginal (shot-list
 segment logic, decimated H5, norm_stats from project). Intended to be run via:
@@ -408,6 +408,8 @@ def parse_args():
     g.add_argument('--disrupt-file', type=str,
                    default='disruptcnn/shots/d3d_disrupt_ecei.final.txt',
                    help='Shot list for disruptive shots (original DisruptCNN format)')
+    g.add_argument('--clear-file', type=str, default=None,
+                   help='Shot list for clear shots (required for original behavior). Default: same dir as --disrupt-file, file d3d_clear_ecei.final.txt')
     g.add_argument('--flattop-only', action='store_true',
                    help='Use flattop segment only (t_flat_start .. tend)')
     g.add_argument('--data-step', type=int, default=10,
@@ -524,13 +526,18 @@ def main():
     model = model.to(device)
     model = DDP(model, device_ids=[local_rank])
 
-    # ── Dataset: original DisruptCNN-style (shot list, flattop, disrupt-only, decimated) ─
+    # ── Dataset: original DisruptCNN-style (shot list, flattop, clear+disrupt, decimated) ─
     # nrecept in raw space for dataset (it converts to decimated internally)
     nrecept_raw = nrecept * args.data_step
+    clear_file = args.clear_file
+    if not clear_file or not str(clear_file).strip():
+        clear_file = str(Path(args.disrupt_file).parent / 'd3d_clear_ecei.final.txt')
+    if not Path(clear_file).exists():
+        raise FileNotFoundError(f'clear_file required for original dataset; not found: {clear_file}. Use --clear-file.')
     inner_ds = EceiDatasetOriginal(
         root=args.root,
         disrupt_file=args.disrupt_file,
-        clear_file=None,
+        clear_file=clear_file,
         flattop_only=args.flattop_only,
         normalize=not args.no_normalize,
         data_step=args.data_step,
