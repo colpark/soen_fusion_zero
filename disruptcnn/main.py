@@ -112,6 +112,8 @@ parser.add_argument('--clear-file', default=None, type=str,
                     help='path to clear shot list .txt. Overrides default if set.')
 parser.add_argument('--disrupt-file', default=None, type=str,
                     help='path to disrupt shot list .txt. Overrides default if set.')
+parser.add_argument('--use-instance-norm', action='store_true',
+                    help='use InstanceNorm1d in TCN instead of weight normalization (default: False)')
 
 
 root = '/scratch/gpfs/rmc2/ecei_d3d/'
@@ -608,10 +610,17 @@ def create_model(args):
     #reset args.nrecept with the actual receptive field
     args.nrecept = calc_seq_length(args.kernel_size,dilation_sizes,args.levels)
 
-    model = TCN(args.input_channels, args.n_classes, channel_sizes, 
-                kernel_size=args.kernel_size, 
-                dropout=args.dropout,
-                dilation_size=dilation_sizes)
+    if getattr(args, 'use_instance_norm', False):
+        from .model_instancenorm import TCN as TCNInstanceNorm
+        model = TCNInstanceNorm(args.input_channels, args.n_classes, channel_sizes,
+                                kernel_size=args.kernel_size,
+                                dropout=args.dropout,
+                                dilation_size=dilation_sizes)
+    else:
+        model = TCN(args.input_channels, args.n_classes, channel_sizes,
+                    kernel_size=args.kernel_size,
+                    dropout=args.dropout,
+                    dilation_size=dilation_sizes)
     return model
 
 def calc_seq_length(kernel_size,dilation_sizes,nlevel):
