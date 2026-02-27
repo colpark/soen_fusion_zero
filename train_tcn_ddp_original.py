@@ -132,6 +132,90 @@ class TCN(nn.Module):
         return torch.sigmoid(o.squeeze(-1))
 
 
+# ── Instance-norm variant (no weight_norm; InstanceNorm1d after each conv) ──
+
+class TemporalBlockInstanceNorm(nn.Module):
+    """Temporal block with InstanceNorm1d instead of weight_norm on convs."""
+
+    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation,
+                 padding, dropout=0.2):
+        super().__init__()
+        self.conv1 = nn.Conv1d(
+            n_inputs, n_outputs, kernel_size,
+            stride=stride, padding=padding, dilation=dilation)
+        self.chomp1 = Chomp1d(padding)
+        self.norm1 = nn.InstanceNorm1d(n_outputs)
+        self.relu1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(dropout)
+
+        self.conv2 = nn.Conv1d(
+            n_outputs, n_outputs, kernel_size,
+            stride=stride, padding=padding, dilation=dilation)
+        self.chomp2 = Chomp1d(padding)
+        self.norm2 = nn.InstanceNorm1d(n_outputs)
+        self.relu2 = nn.ReLU()
+        self.dropout2 = nn.Dropout(dropout)
+
+        self.net = nn.Sequential(
+            self.conv1, self.chomp1, self.norm1, self.relu1, self.dropout1,
+            self.conv2, self.chomp2, self.norm2, self.relu2, self.dropout2,
+        )
+        self.downsample = (nn.Conv1d(n_inputs, n_outputs, 1)
+                           if n_inputs != n_outputs else None)
+        self.relu = nn.ReLU()
+        self.init_weights()
+
+    def init_weights(self):
+        self.conv1.weight.data.normal_(0, 0.01)
+        self.conv2.weight.data.normal_(0, 0.01)
+        if self.downsample is not None:
+            self.downsample.weight.data.normal_(0, 0.01)
+
+    def forward(self, x):
+        out = self.net(x)
+        res = x if self.downsample is None else self.downsample(x)
+        return self.relu(out + res)
+
+
+class TemporalConvNetInstanceNorm(nn.Module):
+    def __init__(self, num_inputs, num_channels, dilation_size=2,
+                 kernel_size=2, dropout=0.2):
+        super().__init__()
+        layers = []
+        num_levels = len(num_channels)
+        if np.isscalar(dilation_size):
+            dilation_size = [dilation_size ** i for i in range(num_levels)]
+        for i in range(num_levels):
+            in_ch = num_inputs if i == 0 else num_channels[i - 1]
+            out_ch = num_channels[i]
+            layers.append(TemporalBlockInstanceNorm(
+                in_ch, out_ch, kernel_size, stride=1,
+                padding=(kernel_size - 1) * dilation_size[i],
+                dilation=dilation_size[i], dropout=dropout))
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.network(x)
+
+
+class TCNInstanceNorm(nn.Module):
+    """TCN with InstanceNorm1d in blocks instead of weight_norm."""
+
+    def __init__(self, input_size, output_size, num_channels,
+                 kernel_size, dropout, dilation_size):
+        super().__init__()
+        self.tcn = TemporalConvNetInstanceNorm(
+            input_size, num_channels,
+            kernel_size=kernel_size, dropout=dropout,
+            dilation_size=dilation_size)
+        self.linear = nn.Linear(num_channels[-1], output_size)
+
+    def forward(self, x):
+        y = self.tcn(x)
+        o = self.linear(y.permute(0, 2, 1))
+        return torch.sigmoid(o.squeeze(-1))
+
+
 # ═════════════════════════════════════════════════════════════════════════
 #  Model builder (same logic as notebook)
 # ═════════════════════════════════════════════════════════════════════════
@@ -142,7 +226,7 @@ def calc_receptive_field(kernel_size, dilation_sizes):
 
 def build_model(input_channels, n_classes, levels, nhid,
                 kernel_size, dilation_base, dropout,
-                nrecept_target=30_000):
+                nrecept_target=30_000, use_instance_norm=False):
     channel_sizes = [nhid] * levels
     base_dilations = [dilation_base ** i for i in range(levels - 1)]
     rf_without_last = calc_receptive_field(kernel_size, base_dilations)
@@ -152,9 +236,14 @@ def build_model(input_channels, n_classes, levels, nhid,
     dilation_sizes = base_dilations + [last_dilation]
     nrecept = calc_receptive_field(kernel_size, dilation_sizes)
 
-    model = TCN(input_channels, n_classes, channel_sizes,
-                kernel_size=kernel_size, dropout=dropout,
-                dilation_size=dilation_sizes)
+    if use_instance_norm:
+        model = TCNInstanceNorm(input_channels, n_classes, channel_sizes,
+                                kernel_size=kernel_size, dropout=dropout,
+                                dilation_size=dilation_sizes)
+    else:
+        model = TCN(input_channels, n_classes, channel_sizes,
+                    kernel_size=kernel_size, dropout=dropout,
+                    dilation_size=dilation_sizes)
     return model, nrecept, dilation_sizes
 
 
@@ -431,6 +520,8 @@ def parse_args():
     g.add_argument('--dilation-base', type=int, default=10)
     g.add_argument('--dropout', type=float, default=0.1)
     g.add_argument('--nrecept-target', type=int, default=30_000)
+    g.add_argument('--use-instance-norm', action='store_true',
+                   help='Use InstanceNorm1d in TCN instead of weight normalization')
 
     # ── training ──
     g = p.add_argument_group('training')
@@ -509,6 +600,7 @@ def main():
         args.input_channels, 1, args.levels, args.nhid,
         args.kernel_size, args.dilation_base, args.dropout,
         nrecept_target=args.nrecept_target,
+        use_instance_norm=getattr(args, 'use_instance_norm', False),
     )
     n_params = sum(p.numel() for p in model.parameters())
     log(rank, f'  Dilations      : {dilation_sizes}')
