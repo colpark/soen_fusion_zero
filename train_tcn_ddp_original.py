@@ -837,7 +837,8 @@ def main():
             return lr / max_lr
 
         scheduler_cosine = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_cosine_warmup_lambda)
-        scheduler_cosine.step(0)  # set initial LR to min_lr (warmup start)
+        for g in optimizer.param_groups:
+            g['lr'] = min_lr  # set initial LR without calling scheduler.step() before optimizer.step
         scheduler_warmup = None
         scheduler_plateau = None
         if rank == 0:
@@ -969,14 +970,17 @@ def main():
                 'global_step': global_step,
                 'state_dict': model.module.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'scheduler_warmup': scheduler_warmup.state_dict(),
-                'scheduler_plateau': scheduler_plateau.state_dict(),
                 'best_f1': best_f1,
                 'threshold': val_metrics['threshold'],
                 'nrecept': nrecept,
                 'history': history,
                 'args': vars(args),
             }
+            if scheduler_cosine is not None:
+                state['scheduler_cosine'] = scheduler_cosine.state_dict()
+            else:
+                state['scheduler_warmup'] = scheduler_warmup.state_dict()
+                state['scheduler_plateau'] = scheduler_plateau.state_dict()
             torch.save(state, ckpt_dir / 'last.pt')
             if is_best:
                 torch.save(state, ckpt_dir / 'best.pt')
