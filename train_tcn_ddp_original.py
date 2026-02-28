@@ -641,7 +641,8 @@ def parse_args():
     g.add_argument('--weight-decay', type=float, default=1e-4)
     g.add_argument('--momentum', type=float, default=0.9,
                    help='SGD momentum (ignored for AdamW)')
-    g.add_argument('--clip', type=float, default=0.3)
+    g.add_argument('--clip', type=float, default=0,
+                   help='Gradient clipping max norm (0 = disabled)')
     g.add_argument('--warmup-epochs', type=int, default=20,
                    help='Warmup epochs (default: 20; use 5 for cosine_warmup)')
     g.add_argument('--warmup-factor', type=int, default=8)

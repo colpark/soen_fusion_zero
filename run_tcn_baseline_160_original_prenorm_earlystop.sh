@@ -2,8 +2,8 @@
 # ═══════════════════════════════════════════════════════════════════════
 #  PreNorm + cosine_warmup + early stopping + stronger regularization.
 #
-#  - PreNorm, cosine LR (max 0.0005, min 0.00002), 5-epoch warmup
-#  - Dropout 0.2, early stopping (patience 25 on val F1)
+#  - PreNorm, cosine LR (max 0.0002, min 0.00002), 5-epoch warmup
+#  - Batch 8/GPU (32 total), dropout 0.2, no grad clip, early stopping (patience 25)
 #
 #  Usage:
 #      bash run_tcn_baseline_160_original_prenorm_earlystop.sh
@@ -19,7 +19,7 @@ export NCCL_IB_DISABLE=1
 export OMP_NUM_THREADS=4
 
 echo "════════════════════════════════════════════════════════════════"
-echo "  PreNorm + cosine_warmup + early stopping (dropout=0.2, min_lr=2e-5)"
+echo "  PreNorm + cosine_warmup + early stop (batch=8, lr=2e-4, no clip, dropout=0.2)"
 echo "  GPUs: ${NGPUS}  |  Extra args: $*"
 echo "════════════════════════════════════════════════════════════════"
 
@@ -31,8 +31,10 @@ torchrun \
     --use-prenorm \
     --lr-schedule cosine_warmup \
     --warmup-epochs 5 \
-    --lr 0.0005 \
+    --lr 0.0002 \
     --min-lr 0.00002 \
+    --batch-size 8 \
+    --clip 0 \
     --dropout 0.2 \
     --early-stopping-patience 25 \
     "$@"
