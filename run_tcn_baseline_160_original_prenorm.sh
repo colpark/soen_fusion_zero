@@ -3,11 +3,11 @@
 #  Baseline TCN with original dataset + PreNorm + cosine annealing + warmup.
 #
 #  - PreNorm: InstanceNorm1d before each conv (no weight_norm).
-#  - LR: max 0.0005, cosine annealing with 5-epoch warmup, min LR 1e-6.
+#  - Batch 16/GPU, LR: max 0.0003, cosine annealing with 5-epoch warmup, min LR 1e-5.
 #
 #  Usage:
 #      bash run_tcn_baseline_160_original_prenorm.sh
-#      bash run_tcn_baseline_160_original_prenorm.sh --epochs 300 --batch-size 32
+#      bash run_tcn_baseline_160_original_prenorm.sh --prebuilt-mmap-dir subseqs_original_mmap
 # ═══════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -19,7 +19,7 @@ export NCCL_IB_DISABLE=1
 export OMP_NUM_THREADS=4
 
 echo "════════════════════════════════════════════════════════════════"
-echo "  Baseline TCN — PreNorm + cosine_warmup (max_lr=0.0005, 5ep warmup)"
+echo "  Baseline TCN — PreNorm + cosine_warmup (batch=16, max_lr=0.0003, min_lr=1e-5)"
 echo "  GPUs: ${NGPUS}  |  Extra args: $*"
 echo "════════════════════════════════════════════════════════════════"
 
@@ -31,6 +31,7 @@ torchrun \
     --use-prenorm \
     --lr-schedule cosine_warmup \
     --warmup-epochs 5 \
-    --lr 0.0005 \
-    --min-lr 0.000001 \
+    --batch-size 16 \
+    --lr 0.0003 \
+    --min-lr 0.00001 \
     "$@"
