@@ -602,6 +602,8 @@ def parse_args():
                    help='Path to norm stats .npz (default: project root norm_stats.npz)')
     g.add_argument('--no-normalize', action='store_true',
                    help='Disable per-channel normalization')
+    g.add_argument('--prebuilt-mmap-dir', type=str, default=None,
+                   help='Use pre-saved subsequences from preprocessing_mmap.ipynb (mmap_ninja); skips H5 loading')
 
     # ── model ──
     g = p.add_argument_group('model')
@@ -719,29 +721,34 @@ def main():
     model = model.to(device)
     model = DDP(model, device_ids=[local_rank])
 
-    # ── Dataset: original DisruptCNN-style (shot list, flattop; clear_file optional → disrupt-only if omitted) ─
+    # ── Dataset: prebuilt mmap or original DisruptCNN-style (shot list, flattop) ─
     nrecept_raw = nrecept * args.data_step
-    clear_file = args.clear_file
-    if clear_file and str(clear_file).strip() and not Path(clear_file).exists():
-        clear_file = None  # treat missing file as disrupt-only
-    if not clear_file or not str(clear_file).strip():
-        clear_file = None
-    inner_ds = EceiDatasetOriginal(
-        root=args.root,
-        disrupt_file=args.disrupt_file,
-        clear_file=clear_file,
-        flattop_only=args.flattop_only,
-        normalize=not args.no_normalize,
-        data_step=args.data_step,
-        nsub=args.nsub,
-        nrecept=nrecept_raw,
-        decimated_root=args.decimated_root,
-        norm_stats_path=args.norm_stats,
-    )
-    ds = OriginalStyleDatasetForDDP(inner_ds)
-    if rank == 0:
-        mode = 'disrupt+clear' if clear_file else 'disrupt-only'
-        log(rank, f'  Original-style dataset: {len(ds)} sequences ({mode}, flattop_only={args.flattop_only})')
+    if getattr(args, 'prebuilt_mmap_dir', None) and str(args.prebuilt_mmap_dir).strip():
+        ds = PrebuiltOriginalSubseqDataset(args.prebuilt_mmap_dir)
+        if rank == 0:
+            log(rank, f'  Prebuilt mmap dataset: {len(ds)} sequences (from {args.prebuilt_mmap_dir})')
+    else:
+        clear_file = args.clear_file
+        if clear_file and str(clear_file).strip() and not Path(clear_file).exists():
+            clear_file = None  # treat missing file as disrupt-only
+        if not clear_file or not str(clear_file).strip():
+            clear_file = None
+        inner_ds = EceiDatasetOriginal(
+            root=args.root,
+            disrupt_file=args.disrupt_file,
+            clear_file=clear_file,
+            flattop_only=args.flattop_only,
+            normalize=not args.no_normalize,
+            data_step=args.data_step,
+            nsub=args.nsub,
+            nrecept=nrecept_raw,
+            decimated_root=args.decimated_root,
+            norm_stats_path=args.norm_stats,
+        )
+        ds = OriginalStyleDatasetForDDP(inner_ds)
+        if rank == 0:
+            mode = 'disrupt+clear' if clear_file else 'disrupt-only'
+            log(rank, f'  Original-style dataset: {len(ds)} sequences ({mode}, flattop_only={args.flattop_only})')
     train_idx = ds.get_split_indices('train')
     val_idx = ds.get_split_indices('test')
     if len(val_idx) == 0:

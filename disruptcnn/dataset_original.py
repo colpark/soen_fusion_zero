@@ -672,3 +672,89 @@ class OriginalStyleDatasetForDDP:
 
     def _compute_class_weights(self, indices: Optional[np.ndarray] = None):
         self._inner.calc_label_weights(inds=indices)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Prebuilt mmap dataset — load from preprocessing_mmap.ipynb output
+# ═══════════════════════════════════════════════════════════════════════
+
+def _load_ragged_mmap(path):
+    try:
+        from mmap_ninja import RaggedMmap
+        return RaggedMmap(str(path))
+    except ImportError as e:
+        raise ImportError(
+            "PrebuiltOriginalSubseqDataset requires mmap_ninja. Install with: pip install mmap_ninja"
+        ) from e
+
+
+class PrebuiltOriginalSubseqDataset:
+    """
+    Dataset that loads pre-saved subsequences from preprocessing_mmap.ipynb output.
+
+    Same interface as OriginalStyleDatasetForDDP: __getitem__(i) returns (X, target, weight),
+    seq_has_disrupt, get_split_indices('train'/'test'/'val'), pos_weight, neg_weight,
+    _compute_class_weights (no-op; uses saved weights). All normalization is already
+    applied in the saved data.
+    """
+
+    def __init__(self, root: str | Path):
+        self._root = Path(root)
+        if not self._root.exists():
+            raise FileNotFoundError(f"Prebuilt mmap dir not found: {self._root}")
+        self._X = _load_ragged_mmap(self._root / "X")
+        self._target = _load_ragged_mmap(self._root / "target")
+        self._weight = _load_ragged_mmap(self._root / "weight")
+        self._labels = np.load(self._root / "labels.npy")
+        self._train_inds = np.load(self._root / "train_inds.npy")
+        self._test_inds = np.load(self._root / "test_inds.npy")
+        val_path = self._root / "val_inds.npy"
+        self._val_inds = np.load(val_path) if val_path.exists() else np.array([], dtype=np.int64)
+        meta_path = self._root / "meta.json"
+        if meta_path.exists():
+            import json
+            with open(meta_path) as f:
+                meta = json.load(f)
+            self._pos_weight = float(meta.get("pos_weight", 1.0))
+            self._neg_weight = float(meta.get("neg_weight", 1.0))
+        else:
+            self._pos_weight = 1.0
+            self._neg_weight = 1.0
+
+    def __len__(self) -> int:
+        return len(self._X)
+
+    def __getitem__(self, index: int):
+        X = np.ascontiguousarray(self._X[index]).astype(np.float32)
+        target = np.asarray(self._target[index], dtype=np.float32)
+        weight = np.asarray(self._weight[index], dtype=np.float32)
+        return (
+            torch.from_numpy(X),
+            torch.from_numpy(target),
+            torch.from_numpy(weight),
+        )
+
+    @property
+    def seq_has_disrupt(self) -> np.ndarray:
+        return self._labels
+
+    def get_split_indices(self, split: str) -> np.ndarray:
+        if split == "train":
+            return self._train_inds
+        if split == "test":
+            return self._test_inds
+        if split == "val":
+            return self._val_inds
+        raise ValueError(f"Unknown split: {split}")
+
+    @property
+    def pos_weight(self) -> float:
+        return self._pos_weight
+
+    @property
+    def neg_weight(self) -> float:
+        return self._neg_weight
+
+    def _compute_class_weights(self, indices: Optional[np.ndarray] = None):
+        """No-op; weights are fixed from preprocessing."""
+        pass
