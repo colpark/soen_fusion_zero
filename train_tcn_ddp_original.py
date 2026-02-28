@@ -216,6 +216,95 @@ class TCNInstanceNorm(nn.Module):
         return torch.sigmoid(o.squeeze(-1))
 
 
+# ── PreNorm variant (InstanceNorm1d *before* each conv, no weight_norm) ──
+
+class TemporalBlockPreNorm(nn.Module):
+    """Temporal block with PreNorm: InstanceNorm1d before each conv."""
+
+    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation,
+                 padding, dropout=0.2):
+        super().__init__()
+        self.norm1 = nn.InstanceNorm1d(n_inputs)
+        self.conv1 = nn.Conv1d(
+            n_inputs, n_outputs, kernel_size,
+            stride=stride, padding=padding, dilation=dilation)
+        self.chomp1 = Chomp1d(padding)
+        self.relu1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(dropout)
+
+        self.norm2 = nn.InstanceNorm1d(n_outputs)
+        self.conv2 = nn.Conv1d(
+            n_outputs, n_outputs, kernel_size,
+            stride=stride, padding=padding, dilation=dilation)
+        self.chomp2 = Chomp1d(padding)
+        self.relu2 = nn.ReLU()
+        self.dropout2 = nn.Dropout(dropout)
+
+        self.downsample = (nn.Conv1d(n_inputs, n_outputs, 1)
+                           if n_inputs != n_outputs else None)
+        self.relu = nn.ReLU()
+        self.init_weights()
+
+    def init_weights(self):
+        self.conv1.weight.data.normal_(0, 0.01)
+        self.conv2.weight.data.normal_(0, 0.01)
+        if self.downsample is not None:
+            self.downsample.weight.data.normal_(0, 0.01)
+
+    def forward(self, x):
+        h = self.norm1(x)
+        h = self.conv1(h)
+        h = self.chomp1(h)
+        h = self.relu1(h)
+        h = self.dropout1(h)
+        h = self.norm2(h)
+        h = self.conv2(h)
+        h = self.chomp2(h)
+        h = self.relu2(h)
+        h = self.dropout2(h)
+        res = x if self.downsample is None else self.downsample(x)
+        return self.relu(h + res)
+
+
+class TemporalConvNetPreNorm(nn.Module):
+    def __init__(self, num_inputs, num_channels, dilation_size=2,
+                 kernel_size=2, dropout=0.2):
+        super().__init__()
+        layers = []
+        num_levels = len(num_channels)
+        if np.isscalar(dilation_size):
+            dilation_size = [dilation_size ** i for i in range(num_levels)]
+        for i in range(num_levels):
+            in_ch = num_inputs if i == 0 else num_channels[i - 1]
+            out_ch = num_channels[i]
+            layers.append(TemporalBlockPreNorm(
+                in_ch, out_ch, kernel_size, stride=1,
+                padding=(kernel_size - 1) * dilation_size[i],
+                dilation=dilation_size[i], dropout=dropout))
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.network(x)
+
+
+class TCNPreNorm(nn.Module):
+    """TCN with PreNorm (InstanceNorm1d before each conv)."""
+
+    def __init__(self, input_size, output_size, num_channels,
+                 kernel_size, dropout, dilation_size):
+        super().__init__()
+        self.tcn = TemporalConvNetPreNorm(
+            input_size, num_channels,
+            kernel_size=kernel_size, dropout=dropout,
+            dilation_size=dilation_size)
+        self.linear = nn.Linear(num_channels[-1], output_size)
+
+    def forward(self, x):
+        y = self.tcn(x)
+        o = self.linear(y.permute(0, 2, 1))
+        return torch.sigmoid(o.squeeze(-1))
+
+
 # ═════════════════════════════════════════════════════════════════════════
 #  Model builder (same logic as notebook)
 # ═════════════════════════════════════════════════════════════════════════
@@ -226,7 +315,7 @@ def calc_receptive_field(kernel_size, dilation_sizes):
 
 def build_model(input_channels, n_classes, levels, nhid,
                 kernel_size, dilation_base, dropout,
-                nrecept_target=30_000, use_instance_norm=False):
+                nrecept_target=30_000, use_instance_norm=False, use_prenorm=False):
     channel_sizes = [nhid] * levels
     base_dilations = [dilation_base ** i for i in range(levels - 1)]
     rf_without_last = calc_receptive_field(kernel_size, base_dilations)
@@ -236,7 +325,11 @@ def build_model(input_channels, n_classes, levels, nhid,
     dilation_sizes = base_dilations + [last_dilation]
     nrecept = calc_receptive_field(kernel_size, dilation_sizes)
 
-    if use_instance_norm:
+    if use_prenorm:
+        model = TCNPreNorm(input_channels, n_classes, channel_sizes,
+                           kernel_size=kernel_size, dropout=dropout,
+                           dilation_size=dilation_sizes)
+    elif use_instance_norm:
         model = TCNInstanceNorm(input_channels, n_classes, channel_sizes,
                                 kernel_size=kernel_size, dropout=dropout,
                                 dilation_size=dilation_sizes)
@@ -542,8 +635,13 @@ def parse_args():
                    help='SGD momentum (ignored for AdamW)')
     g.add_argument('--clip', type=float, default=0.3)
     g.add_argument('--warmup-epochs', type=int, default=20,
-                   help='Warmup epochs (default: 20; ~5 single-GPU-equiv epochs)')
+                   help='Warmup epochs (default: 20; use 5 for cosine_warmup)')
     g.add_argument('--warmup-factor', type=int, default=8)
+    g.add_argument('--min-lr', type=float, default=1e-6,
+                   help='Minimum LR for cosine_warmup schedule')
+    g.add_argument('--lr-schedule', type=str, default='plateau',
+                   choices=['plateau', 'cosine_warmup'],
+                   help='LR schedule: plateau (warmup+ReduceLROnPlateau) or cosine_warmup')
     g.add_argument('--log-every', type=int, default=5)
 
     # ── checkpointing ──
@@ -601,6 +699,7 @@ def main():
         args.kernel_size, args.dilation_base, args.dropout,
         nrecept_target=args.nrecept_target,
         use_instance_norm=getattr(args, 'use_instance_norm', False),
+        use_prenorm=getattr(args, 'use_prenorm', False),
     )
     n_params = sum(p.numel() for p in model.parameters())
     log(rank, f'  Dilations      : {dilation_sizes}')
@@ -715,13 +814,34 @@ def main():
 
     # ── Schedulers ───────────────────────────────────────────────────────
     warmup_iters = args.warmup_epochs * len(train_loader)
-    warmup_lambda = (lambda it:
-                     (1 - 1 / args.warmup_factor) / max(warmup_iters, 1) * it
-                     + 1 / args.warmup_factor)
-    scheduler_warmup = optim.lr_scheduler.LambdaLR(
-        optimizer, lr_lambda=warmup_lambda)
-    scheduler_plateau = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, factor=0.5)  # patience=10 default
+    if args.lr_schedule == 'cosine_warmup':
+        total_iters = args.epochs * len(train_loader)
+        max_lr = args.lr
+        min_lr = getattr(args, 'min_lr', 1e-6)
+
+        def _cosine_warmup_lambda(step):
+            if step < warmup_iters:
+                return (min_lr + (max_lr - min_lr) * step / max(1, warmup_iters)) / max_lr
+            progress = (step - warmup_iters) / max(1, total_iters - warmup_iters)
+            progress = min(1.0, progress)
+            lr = min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * progress))
+            return lr / max_lr
+
+        scheduler_cosine = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=_cosine_warmup_lambda)
+        scheduler_cosine.step(0)  # set initial LR to min_lr (warmup start)
+        scheduler_warmup = None
+        scheduler_plateau = None
+        if rank == 0:
+            log(rank, f'  LR schedule: cosine_warmup (warmup={args.warmup_epochs} ep, max_lr={max_lr}, min_lr={min_lr})')
+    else:
+        warmup_lambda = (lambda it:
+                         (1 - 1 / args.warmup_factor) / max(warmup_iters, 1) * it
+                         + 1 / args.warmup_factor)
+        scheduler_warmup = optim.lr_scheduler.LambdaLR(
+            optimizer, lr_lambda=warmup_lambda)
+        scheduler_plateau = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, factor=0.5)  # patience=10 default
+        scheduler_cosine = None
 
     # ── Checkpoint directory ─────────────────────────────────────────────
     ckpt_dir = Path(args.checkpoint_dir)
@@ -750,9 +870,11 @@ def main():
         optimizer.load_state_dict(ckpt['optimizer'])
 
         # schedulers (restore internal counters, patience, best, etc.)
-        if 'scheduler_warmup' in ckpt:
+        if 'scheduler_cosine' in ckpt and scheduler_cosine is not None:
+            scheduler_cosine.load_state_dict(ckpt['scheduler_cosine'])
+        if 'scheduler_warmup' in ckpt and scheduler_warmup is not None:
             scheduler_warmup.load_state_dict(ckpt['scheduler_warmup'])
-        if 'scheduler_plateau' in ckpt:
+        if 'scheduler_plateau' in ckpt and scheduler_plateau is not None:
             scheduler_plateau.load_state_dict(ckpt['scheduler_plateau'])
 
         # counters
@@ -801,13 +923,16 @@ def main():
         )
         global_step += len(train_loader)
 
-        if global_step <= warmup_iters:
-            scheduler_warmup.step(global_step)
+        if scheduler_cosine is not None:
+            scheduler_cosine.step(global_step)
+        else:
+            if global_step <= warmup_iters:
+                scheduler_warmup.step(global_step)
 
         # ── VALIDATE ─────────────────────────────────────────────────────
         val_metrics = evaluate(model, val_loader, nrecept, device)
 
-        if global_step > warmup_iters:
+        if scheduler_cosine is None and global_step > warmup_iters:
             scheduler_plateau.step(val_metrics['loss'])
 
         lr_now = optimizer.param_groups[0]['lr']
