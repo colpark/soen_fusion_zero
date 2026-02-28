@@ -650,6 +650,8 @@ def parse_args():
     g.add_argument('--lr-schedule', type=str, default='plateau',
                    choices=['plateau', 'cosine_warmup'],
                    help='LR schedule: plateau (warmup+ReduceLROnPlateau) or cosine_warmup')
+    g.add_argument('--early-stopping-patience', type=int, default=0,
+                   help='Stop if val F1 does not improve for this many epochs (0 = disabled)')
     g.add_argument('--log-every', type=int, default=5)
 
     # ── checkpointing ──
@@ -917,6 +919,9 @@ def main():
     #  Training loop
     # ═════════════════════════════════════════════════════════════════════
 
+    epochs_without_improvement = 0
+    patience = getattr(args, 'early_stopping_patience', 0) or 0
+
     for epoch in range(start_epoch, args.epochs + 1):
         t0 = time.perf_counter()
 
@@ -967,6 +972,9 @@ def main():
         is_best = val_metrics['f1'] > best_f1
         if is_best:
             best_f1 = val_metrics['f1']
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
 
         if rank == 0:
             state = {
@@ -1020,6 +1028,11 @@ def main():
                   f'                              │')
         log(rank, f'  └────────────────────────────────────────────'
                   f'───────────────────┘')
+
+        if patience > 0 and epochs_without_improvement >= patience:
+            if rank == 0:
+                log(rank, f'\n  Early stopping: no val F1 improvement for {patience} epochs.')
+            break
 
     # ── Save training history ────────────────────────────────────────────
     if rank == 0:
