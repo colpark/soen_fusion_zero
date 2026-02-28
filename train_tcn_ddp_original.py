@@ -41,7 +41,11 @@ from torch.nn.utils.parametrizations import weight_norm
 from torch.utils.data import DataLoader, Subset
 
 from dataset_ecei_tcn import StratifiedBatchSampler
-from disruptcnn.dataset_original import EceiDatasetOriginal, OriginalStyleDatasetForDDP
+from disruptcnn.dataset_original import (
+    EceiDatasetOriginal,
+    OriginalStyleDatasetForDDP,
+    PrebuiltOriginalSubseqDataset,
+)
 
 
 # ═════════════════════════════════════════════════════════════════════════
