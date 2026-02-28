@@ -615,6 +615,8 @@ def parse_args():
     g.add_argument('--nrecept-target', type=int, default=30_000)
     g.add_argument('--use-instance-norm', action='store_true',
                    help='Use InstanceNorm1d in TCN instead of weight normalization')
+    g.add_argument('--use-prenorm', action='store_true',
+                   help='Use PreNorm TCN (InstanceNorm1d before each conv)')
 
     # ── training ──
     g = p.add_argument_group('training')
