@@ -627,8 +627,8 @@ def parse_args():
 
     # ── training ──
     g = p.add_argument_group('training')
-    g.add_argument('--epochs', type=int, default=200,
-                   help='Total epochs (default: 200; with 4 GPUs each epoch '
+    g.add_argument('--epochs', type=int, default=50,
+                   help='Total epochs (default: 50; with 4 GPUs each epoch '
                         'has ~1/4 the gradient updates of single-GPU)')
     g.add_argument('--batch-size', type=int, default=48,
                    help='Per-GPU batch size (default: 48, eff. 192 on 4 GPUs)')
