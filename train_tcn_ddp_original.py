@@ -41,6 +41,7 @@ from torch.nn.utils.parametrizations import weight_norm
 from torch.utils.data import DataLoader, Subset
 
 from dataset_ecei_tcn import StratifiedBatchSampler
+from augment_ecei import AugmentWrapper
 from disruptcnn.dataset_original import (
     EceiDatasetOriginal,
     OriginalStyleDatasetForDDP,
@@ -653,6 +654,15 @@ def parse_args():
                    help='LR schedule: plateau (warmup+ReduceLROnPlateau) or cosine_warmup')
     g.add_argument('--early-stopping-patience', type=int, default=0,
                    help='Stop if val F1 does not improve for this many epochs (0 = disabled)')
+    g.add_argument('--augment', action='store_true', help='Apply data augmentation (noise, scale, boundary jitter) on train')
+    g.add_argument('--augment-noise-std', type=float, default=0.02,
+                   help='Gaussian noise sigma on input (default 0.02)')
+    g.add_argument('--augment-noise-disrupt', type=float, default=0.03,
+                   help='Extra noise sigma on disruptive segment (default 0.03)')
+    g.add_argument('--augment-scale', type=float, default=0.1,
+                   help='Amplitude scale range ± this (e.g. 0.1 → [0.9, 1.1], default 0.1)')
+    g.add_argument('--augment-boundary-jitter', type=int, default=5,
+                   help='Max samples to shift clear/disrupt boundary (default 5)')
     g.add_argument('--log-every', type=int, default=5)
 
     # ── checkpointing ──
@@ -765,6 +775,17 @@ def main():
 
     # ── Training loader: distributed stratified batches ──────────────────
     data_for_train = train_ds
+    if getattr(args, 'augment', False):
+        aug_config = {
+            'noise_std': getattr(args, 'augment_noise_std', 0.02),
+            'noise_std_disrupt': getattr(args, 'augment_noise_disrupt', 0.03),
+            'scale_range': (1.0 - getattr(args, 'augment_scale', 0.1), 1.0 + getattr(args, 'augment_scale', 0.1)),
+            'boundary_jitter': getattr(args, 'augment_boundary_jitter', 5),
+        }
+        data_for_train = AugmentWrapper(data_for_train, config=aug_config, train=True)
+        if rank == 0:
+            log(rank, f'  Augmentation: noise_std={aug_config["noise_std"]}, noise_disrupt={aug_config["noise_std_disrupt"]}, '
+                      f'scale={aug_config["scale_range"]}, boundary_jitter={aug_config["boundary_jitter"]}')
     train_sampler = DistributedStratifiedBatchSampler(
         labels=data_for_train.seq_has_disrupt.astype(int),
         indices=train_idx,
@@ -928,6 +949,8 @@ def main():
 
         train_sampler.set_epoch(epoch)
         val_sampler.set_epoch(epoch)
+        if hasattr(data_for_train, 'set_epoch'):
+            data_for_train.set_epoch(epoch)
 
         log(rank, f'\n{"─" * 90}')
         log(rank, f'  EPOCH {epoch}/{args.epochs}   '
