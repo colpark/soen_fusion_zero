@@ -108,8 +108,8 @@ def main():
     for L, H, N in configs:
         print("{:6}  {:4}  {:>10,}".format(L, H, N))
     print("\nUse with: --levels L --nhid H (e.g. run_ablation_small_models.sh)")
-  if configs and configs[-1][2] > args.target * 1.5:
-    print("\nNote: smallest config is ~{} params; reaching ~{} would need smaller kernel or different arch.".format(configs[-1][2], args.target))
+    if configs and configs[-1][2] > args.target * 1.5:
+        print("\nNote: smallest config is ~{} params; reaching ~{} would need smaller kernel or different arch.".format(configs[-1][2], args.target))
 
 
 if __name__ == "__main__":
