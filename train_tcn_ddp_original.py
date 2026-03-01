@@ -680,12 +680,16 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # ── Checkpoint dir: add start-time subdir to distinguish runs; when resuming, use resume file's parent
+    # ── Checkpoint dir: when resuming use resume file's parent; else add subdir by config + time
     if args.resume:
         args.checkpoint_dir = str(Path(args.resume).resolve().parent)
     elif getattr(args, 'checkpoint_by_time', True):
+        # Include key config in dir name: L{levels}_H{nhid}_ then timestamp
+        config_tag = "L{}_H{}".format(args.levels, args.nhid)
+        if getattr(args, 'use_prenorm', False):
+            config_tag += "_prenorm"
         start_time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-        args.checkpoint_dir = str(Path(args.checkpoint_dir) / start_time_str)
+        args.checkpoint_dir = str(Path(args.checkpoint_dir) / "{}_{}".format(config_tag, start_time_str))
 
     # Norm stats: default to project root (soen_fusion_zero/norm_stats.npz)
     if args.norm_stats is None:
