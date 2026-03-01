@@ -31,7 +31,7 @@ export NCCL_IB_DISABLE=1
 export OMP_NUM_THREADS=4
 
 # Get ablation configs: "levels  nhid  params" per line
-CONFIGS="$("${SCRIPT_DIR}/ablation_model_sizes.py" --list)"
+CONFIGS="$(python "${SCRIPT_DIR}/ablation_model_sizes.py" --list)"
 if [ -z "$CONFIGS" ]; then
   echo "ablation_model_sizes.py --list returned nothing"
   exit 1
