@@ -90,6 +90,8 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'multi node data parallel training')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
+parser.add_argument('--checkpoint-dir', default='', type=str,
+                    help='directory to save checkpoints and logs (e.g. checkpoints_tcn_ddp_original/ablation_L1_H1_k5)')
 parser.add_argument('--data-step', default=1, type=int,
                     help='step to take in indexing the data')
 parser.add_argument('--test', default=0, type=int, metavar='N',
@@ -413,6 +415,8 @@ def main_worker(gpu,ngpus_per_node,args):
                  
                 if (not args.multiprocessing_distributed and args.rank==0) or \
                    (args.multiprocessing_distributed and args.rank % ngpus_per_node == 0):
+                    ckpt_name = 'checkpoint.'+os.environ.get('SLURM_JOB_ID', '0')+'.pth.tar'
+                    ckpt_path = os.path.join(args.checkpoint_dir, ckpt_name) if args.checkpoint_dir else ckpt_name
                     save_checkpoint({
                         'epoch': epoch + 1,
                         'state_dict': model.state_dict(),
@@ -422,7 +426,7 @@ def main_worker(gpu,ngpus_per_node,args):
                         'confusion_matrix': {'TP':TP, 'TN':TN, 'FP':FP, 'FN':FN},
                         'f1': valid_f1,
                         'threshold': threshold,
-                    }, is_best,filename='checkpoint.'+os.environ['SLURM_JOB_ID']+'.pth.tar')
+                    }, is_best, filename=ckpt_path, checkpoint_dir=args.checkpoint_dir)
             
 
     print("Main training loop ended")
@@ -591,10 +595,12 @@ def f1_score(TP,TP_FP,TP_FN,eps=1e-10):
     recall = TP/TP_FN+eps
     return 2./(1./precision + 1./recall)
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar', checkpoint_dir=''):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'model_best.'+str(int(os.environ['SLURM_JOB_ID']))+'.pth.tar')
+        best_name = 'model_best.'+str(int(os.environ.get('SLURM_JOB_ID', 0)))+'.pth.tar'
+        best_path = os.path.join(checkpoint_dir, best_name) if checkpoint_dir else best_name
+        shutil.copyfile(filename, best_path)
 
 
 def create_model(args):

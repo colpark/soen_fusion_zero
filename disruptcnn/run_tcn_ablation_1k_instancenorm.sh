@@ -1,7 +1,6 @@
 #!/bin/bash
-# TCN baseline: original dataloader (shot list, flattop, Twarn=300) + InstanceNorm1d instead of weight_norm.
-# Same as run_tcn_baseline_160_original.sh but with --use-instance-norm.
-# Run from repo root: sbatch disruptcnn/run_tcn_baseline_160_original_instancenorm.sh
+# TCN ~1k-param ablation: L=1, H=1, kernel_size=5. Saves to checkpoints_tcn_ddp_original/ablation_L1_H1_k5.
+# Run from repo root: sbatch disruptcnn/run_tcn_ablation_1k_instancenorm.sh
 #SBATCH --nodes=4
 #SBATCH --ntasks-per-node=4
 #SBATCH --ntasks-per-socket=2
@@ -28,11 +27,16 @@ git --git-dir=$PWD/disruptcnn/.git show --oneline -s
 
 export CUDA_LAUNCH_BLOCKING=0
 
+# Checkpoint folder name reflects kernel: ablation_L1_H1_k5
+CKPT_DIR="checkpoints_tcn_ddp_original/ablation_L1_H1_k5"
+mkdir -p "$CKPT_DIR"
+
 file="file:///scratch/gpfs/rmc2/main_${SLURM_JOB_ID}.txt"
 srun -n 16 python -u disruptcnn/main.py --dist-url $file --backend 'nccl' \
     --use-original-dataloader \
     --flattop-only \
     --use-instance-norm \
+    --checkpoint-dir "$CKPT_DIR" \
     --batch-size=12 --dropout=0.1 --clip=0.3 \
     --lr=0.5 \
     --workers=6 \
@@ -40,6 +44,6 @@ srun -n 16 python -u disruptcnn/main.py --dist-url $file --backend 'nccl' \
     --nsub 78125 \
     --epochs=1500 \
     --label-balance='const' \
-    --data-step=10 --levels=4 --nrecept=30000 --nhid=80 \
+    --data-step=10 --levels=1 --nrecept=30000 --nhid=1 --kernel-size=5 \
     --undersample \
     --iterations-valid 60
