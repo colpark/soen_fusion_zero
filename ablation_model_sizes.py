@@ -102,6 +102,14 @@ def main():
         n_small = count_params(1, 1, small_k)
         if n_small < args.target * 1.5:  # only add if in a sensible range
             configs.append((1, 1, n_small, small_k))
+
+    # Extra ablation: L=4,3,2 with H=1 and small kernel — ~1k params by depth
+    for L in [2, 3, 4]:
+        n_depth = count_params(L, 1, 3)
+        if args.target * 0.8 <= n_depth <= args.target * 1.5 and (L, 1, 3) not in seen:
+            seen.add((L, 1, 3))
+            configs.append((L, 1, n_depth, 3))
+
     configs.sort(key=lambda x: -x[2])
 
     if args.list:
@@ -109,7 +117,7 @@ def main():
             print("{}  {}  {}  {}".format(L, H, N, K))
         return
 
-    print("Ablation sequence (roughly halving params each step, then L1 H1 small kernel):")
+    print("Ablation sequence (halving params, then L1 H1 small kernel, then L4/L3/L2 at ~1k):")
     print("levels  nhid   params  kernel")
     print("-" * 36)
     for L, H, N, K in configs:
