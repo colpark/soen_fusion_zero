@@ -17,17 +17,17 @@ from __future__ import annotations
 import argparse
 
 INPUT_CHANNELS = 160
-KERNEL_SIZE = 15
+DEFAULT_KERNEL_SIZE = 15
 
 
-def count_params(levels: int, nhid: int) -> int:
+def count_params(levels: int, nhid: int, kernel_size: int = DEFAULT_KERNEL_SIZE) -> int:
     """
     PreNorm TCN param count: channel_sizes = [nhid]*levels, input_channels=160.
     Block 0: InstanceNorm(160), Conv(160, nhid, k), InstanceNorm(nhid), Conv(nhid, nhid, k), Down(160, nhid).
     Block i>0: InstanceNorm(nhid), Conv(nhid, nhid, k), InstanceNorm(nhid), Conv(nhid, nhid, k).
     Linear(nhid, 1).
     """
-    k = KERNEL_SIZE
+    k = kernel_size
     in_ch = INPUT_CHANNELS
     # Block 0
     n0 = 2 * in_ch + (in_ch * nhid * k + nhid) + 2 * nhid + (nhid * nhid * k + nhid)
@@ -52,15 +52,15 @@ def main():
     if not args.list:
         print(f"Baseline: levels={args.baseline_levels}, nhid={args.baseline_nhid} → {baseline_params:,} params\n")
 
-    # Candidate grid
+    # Candidate grid (all with default kernel size 15)
     candidates = []
     for L in range(1, args.baseline_levels + 1):
         for H in [80, 56, 40, 28, 20, 14, 10, 8, 6, 5, 4, 3, 2, 1]:
             if H < 1:
                 continue
-            n = count_params(L, H)
+            n = count_params(L, H, DEFAULT_KERNEL_SIZE)
             if n >= args.target:
-                candidates.append((L, H, n))
+                candidates.append((L, H, n, DEFAULT_KERNEL_SIZE))
     candidates.sort(key=lambda x: x[2], reverse=True)
 
     # Target sequence: baseline, baseline/2, baseline/4, ... down to ~args.target
@@ -78,36 +78,43 @@ def main():
     for target in targets:
         best = None
         best_diff = float("inf")
-        for L, H, n in candidates:
-            if (L, H) in used:
+        for L, H, n, k in candidates:
+            if (L, H, k) in used:
                 continue
             diff = n - target if n >= target else target - n
             if diff < best_diff:
                 best_diff = diff
-                best = (L, H, n)
+                best = (L, H, n, k)
         if best and best[2] >= args.target:
             chosen.append(best)
-            used.add((best[0], best[1]))
+            used.add((best[0], best[1], best[3]))
 
     seen = set()
     configs = []
-    for L, H, N in chosen:
-        if (L, H) not in seen:
-            seen.add((L, H))
-            configs.append((L, H, N))
+    for L, H, N, K in chosen:
+        if (L, H, K) not in seen:
+            seen.add((L, H, K))
+            configs.append((L, H, N, K))
+    configs.sort(key=lambda x: -x[2])
+
+    # Extra ablation: L1 H1 with smaller kernel to get params < 1000
+    for small_k in [5, 3]:
+        n_small = count_params(1, 1, small_k)
+        if n_small < args.target * 1.5:  # only add if in a sensible range
+            configs.append((1, 1, n_small, small_k))
     configs.sort(key=lambda x: -x[2])
 
     if args.list:
-        for L, H, N in configs:
-            print("{}  {}  {}".format(L, H, N))
+        for L, H, N, K in configs:
+            print("{}  {}  {}  {}".format(L, H, N, K))
         return
 
-    print("Ablation sequence (roughly halving params each step):")
-    print("levels  nhid   params")
-    print("-" * 28)
-    for L, H, N in configs:
-        print("{:6}  {:4}  {:>10,}".format(L, H, N))
-    print("\nUse with: --levels L --nhid H (e.g. run_ablation_small_models.sh)")
+    print("Ablation sequence (roughly halving params each step, then L1 H1 small kernel):")
+    print("levels  nhid   params  kernel")
+    print("-" * 36)
+    for L, H, N, K in configs:
+        print("{:6}  {:4}  {:>10,}  {:>6}".format(L, H, N, K))
+    print("\nUse with: --levels L --nhid H [--kernel-size K] (e.g. run_ablation_small_models.sh)")
     if configs and configs[-1][2] > args.target * 1.5:
         print("\nNote: smallest config is ~{} params; reaching ~{} would need smaller kernel or different arch.".format(configs[-1][2], args.target))
 

@@ -6,9 +6,10 @@
 #    --prebuilt-mmap-dir subseqs_original_mmap --lr 0.0005
 #  (levels=4, nhid=80 → ~877k params)
 #
-#  This script runs the same command with --levels L --nhid H for each row
-#  produced by:  python ablation_model_sizes.py --list
-#  so that model size goes from baseline down to ~1000 params.
+#  This script runs the same command with --levels L --nhid H [--kernel-size K]
+#  for each row produced by:  python ablation_model_sizes.py --list
+#  (output: L  H  params  K). When K != 15, --kernel-size K is passed to get
+#  models below ~1000 params (e.g. L1 H1 K5, L1 H1 K3).
 #
 #  Usage:
 #    bash run_ablation_small_models.sh
@@ -30,7 +31,7 @@ RUN_ABLATION_INDEX="${RUN_ABLATION_INDEX:-}"
 export NCCL_IB_DISABLE=1
 export OMP_NUM_THREADS=4
 
-# Get ablation configs: "levels  nhid  params" per line
+# Get ablation configs: "levels  nhid  params  kernel" per line
 CONFIGS="$(python "${SCRIPT_DIR}/ablation_model_sizes.py" --list)"
 if [ -z "$CONFIGS" ]; then
   echo "ablation_model_sizes.py --list returned nothing"
@@ -38,10 +39,12 @@ if [ -z "$CONFIGS" ]; then
 fi
 
 echo "════════════════════════════════════════════════════════════════"
-echo "  Ablation: small models (baseline → ~1000 params)"
+echo "  Ablation: small models (baseline → ~1000 params, incl. small kernel)"
 echo "  GPUs: ${NGPUS}  |  Extra args: $*"
 echo "  Configs:"
-echo "$CONFIGS" | while read -r L H _; do echo "    levels=$L nhid=$H"; done
+echo "$CONFIGS" | while read -r L H _ K; do
+  if [ -n "${K:-}" ] && [ "$K" != "15" ]; then echo "    levels=$L nhid=$H kernel=$K"; else echo "    levels=$L nhid=$H"; fi
+done
 echo "════════════════════════════════════════════════════════════════"
 
 RUN_INDEX=0
@@ -53,8 +56,19 @@ while IFS= read -r line; do
   fi
   L=$(echo "$line" | awk '{print $1}')
   H=$(echo "$line" | awk '{print $2}')
+  K=$(echo "$line" | awk '{print $4}')
+  # Default kernel 15 (training script default)
+  if [ -z "$K" ]; then K=15; fi
+  CKPT_DIR="checkpoints_tcn_ddp_original/${CHECKPOINT_SUFFIX}_L${L}_H${H}"
+  if [ "$K" != "15" ]; then
+    CKPT_DIR="${CKPT_DIR}_K${K}"
+  fi
+  KERNEL_ARGS=()
+  if [ "$K" != "15" ]; then
+    KERNEL_ARGS=(--kernel-size "$K")
+  fi
   echo ""
-  echo "────────────────── Ablation run $RUN_INDEX: levels=$L nhid=$H ──────────────────"
+  echo "────────────────── Ablation run $RUN_INDEX: levels=$L nhid=$H kernel=$K ──────────────────"
   torchrun \
     --standalone \
     --nproc_per_node="${NGPUS}" \
@@ -68,7 +82,8 @@ while IFS= read -r line; do
     --min-lr 0.00001 \
     --levels "$L" \
     --nhid "$H" \
-    --checkpoint-dir "checkpoints_tcn_ddp_original/${CHECKPOINT_SUFFIX}_L${L}_H${H}" \
+    "${KERNEL_ARGS[@]}" \
+    --checkpoint-dir "$CKPT_DIR" \
     --no-checkpoint-by-time \
     --prebuilt-mmap-dir subseqs_original_mmap \
     "$@"
