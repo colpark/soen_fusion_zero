@@ -422,7 +422,7 @@ def parse_args():
     g.add_argument('--baseline-len', type=int, default=40_000)
     g.add_argument('--nsub', type=int, default=781_250)
     g.add_argument('--stride-scale', type=float, default=1.0,
-                   help='Scale stride (e.g. 0.1 = 10x more overlapping windows per shot, larger dataset)')
+                   help='Scale stride (default 1.0; 0.1 = 10x more overlapping windows per shot)')
     g.add_argument('--prebuilt-subseq-dir', type=str, default=None,
                    help='Use pre-saved subsequence .npz from preprocess_subseqs.py (avoids shm)')
     g.add_argument('--pca-components', type=int, default=1, choices=[0, 1, 4, 8, 16],
