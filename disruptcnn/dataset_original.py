@@ -532,7 +532,7 @@ class EceiDatasetOriginal(data.Dataset):
         shot_index = self.shot_idxi[index]
         filename = self._filename(shot_index)
         with h5py.File(filename, "r") as f:
-            if np.all(self.offsets[..., shot_index] == 0):
+            if np.all(self.offsets[..., shot_index] == 0) and "offsets" in f:
                 self.offsets[..., shot_index] = f["offsets"][...]
             X = (
                 f["LFS"][..., self.start_idxi[index] : self.stop_idxi[index]][..., :: self._step_in_getitem]
