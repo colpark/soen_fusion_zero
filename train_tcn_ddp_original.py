@@ -361,9 +361,10 @@ class DistributedStratifiedBatchSampler:
 
     def __init__(self, labels, indices, batch_size,
                  rank: int, world_size: int,
+                 neg_pos_ratio: float = 1,
                  drop_last: bool = True, seed: int = 42):
         self._inner = StratifiedBatchSampler(
-            labels, indices, batch_size, drop_last, seed)
+            labels, indices, batch_size, neg_pos_ratio=neg_pos_ratio, drop_last=drop_last, seed=seed)
         self.rank = rank
         self.world_size = world_size
         # expose for weight recomputation
@@ -664,6 +665,8 @@ def parse_args():
     g.add_argument('--augment-boundary-jitter', type=int, default=5,
                    help='Max samples to shift clear/disrupt boundary (default 5)')
     g.add_argument('--log-every', type=int, default=5)
+    g.add_argument('--batch-neg-pos-ratio', type=float, default=1,
+                   help='Neg:pos ratio per batch (1=50/50, 16=16:1 neg:pos; default 1)')
 
     # ── checkpointing ──
     g = p.add_argument_group('checkpointing')
@@ -796,10 +799,13 @@ def main():
         batch_size=args.batch_size,
         rank=rank,
         world_size=world_size,
+        neg_pos_ratio=getattr(args, 'batch_neg_pos_ratio', 1),
     )
 
     n_pos = len(train_sampler.pos_idx)
     n_neg = len(train_sampler.neg_idx)
+    log(rank, f'  Batch balance: neg_pos_ratio={getattr(args, "batch_neg_pos_ratio", 1):.1f} '
+              f'→ {train_sampler._inner.n_pos_per_batch} pos + {train_sampler._inner.n_neg_per_batch} neg per batch')
     n_eff = min(n_pos, n_neg)
     eff_indices = np.concatenate([
         train_sampler.pos_idx[:n_eff],

@@ -768,11 +768,13 @@ import math
 from torch.utils.data import Sampler
 
 class StratifiedBatchSampler(Sampler):
-    """Yield batches where positive and negative subsequences are balanced.
+    """Yield batches with controlled positive/negative balance.
 
-    Each batch contains ``batch_size // 2`` positive (disruptive) indices
-    and ``batch_size - batch_size // 2`` negative (clear) indices.
-    The minority class is oversampled (cycled) so every epoch still
+    Each batch contains ``n_pos_per_batch`` positive (disruptive) and
+    ``n_neg_per_batch`` negative (clear) indices, with
+    ``n_neg_per_batch / n_pos_per_batch == neg_pos_ratio``.
+    neg_pos_ratio=1 → 50/50 (most radical balance); neg_pos_ratio=16 → 16:1 neg:pos.
+    The minority side is oversampled (cycled) so every epoch still
     covers all samples from the majority class.
 
     Parameters
@@ -782,14 +784,17 @@ class StratifiedBatchSampler(Sampler):
     indices : array-like of int
         Global dataset indices that belong to this split.
     batch_size : int
+    neg_pos_ratio : float or int
+        Target ratio of negative to positive samples per batch (default 1 = 50/50).
     drop_last : bool
         If True, drop the final incomplete batch.
     seed : int
         Base random seed; call ``set_epoch(e)`` to re-seed each epoch.
     """
 
-    def __init__(self, labels, indices, batch_size, drop_last=True, seed=42):
+    def __init__(self, labels, indices, batch_size, neg_pos_ratio=1, drop_last=True, seed=42):
         self.batch_size = batch_size
+        self.neg_pos_ratio = float(neg_pos_ratio)
         self.drop_last = drop_last
         self.seed = seed
         self._epoch = 0
@@ -799,9 +804,14 @@ class StratifiedBatchSampler(Sampler):
         self.pos_idx = indices[labels[indices] == 1]
         self.neg_idx = indices[labels[indices] == 0]
 
-        # how many of each per batch
-        self.n_pos_per_batch = batch_size // 2
-        self.n_neg_per_batch = batch_size - self.n_pos_per_batch
+        # how many of each per batch: n_neg/n_pos = neg_pos_ratio, n_pos + n_neg = batch_size
+        n_pos_per_batch = max(1, int(batch_size / (1.0 + self.neg_pos_ratio)))
+        n_neg_per_batch = batch_size - n_pos_per_batch
+        if n_neg_per_batch < 0:
+            n_neg_per_batch = 0
+            n_pos_per_batch = batch_size
+        self.n_pos_per_batch = n_pos_per_batch
+        self.n_neg_per_batch = n_neg_per_batch
 
         # total batches so majority class is covered once
         n_from_pos = math.ceil(len(self.pos_idx) / max(self.n_pos_per_batch, 1))
