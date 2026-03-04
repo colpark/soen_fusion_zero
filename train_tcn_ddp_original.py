@@ -592,7 +592,9 @@ def parse_args():
                    help='Data root (disrupt meta; not used when using decimated-root for H5)')
     g.add_argument('--decimated-root', type=str,
                    default='/home/idies/workspace/Storage/yhuang2/persistent/ecei/dsrpt_decimated',
-                   help='Decimated H5 directory (flat {shot}.h5); used for loading')
+                   help='Decimated H5 directory for disrupt shots (flat {shot}.h5)')
+    g.add_argument('--clear-decimated-root', type=str, default=None,
+                   help='Decimated H5 directory for clear shots; if set, clear shots load from here (ecei_mc: clear_decimated)')
     g.add_argument('--disrupt-file', type=str,
                    default='disruptcnn/shots/d3d_disrupt_ecei.final.txt',
                    help='Shot list for disruptive shots (original DisruptCNN format)')
@@ -767,6 +769,7 @@ def main():
             nsub=args.nsub,
             nrecept=nrecept_raw,
             decimated_root=args.decimated_root,
+            clear_decimated_root=getattr(args, 'clear_decimated_root', None),
             norm_stats_path=args.norm_stats,
         )
         ds = OriginalStyleDatasetForDDP(inner_ds)

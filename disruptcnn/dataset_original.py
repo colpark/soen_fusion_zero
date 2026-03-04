@@ -301,10 +301,12 @@ class EceiDatasetOriginal(data.Dataset):
         nrecept: Optional[int] = None,
         snr_min_threshold: Optional[float] = None,
         decimated_root: Optional[str] = None,
+        clear_decimated_root: Optional[str] = None,
         norm_stats_path: Optional[str] = None,
     ):
         self.root = root
         self._decimated_root = Path(decimated_root) if decimated_root and str(decimated_root).strip() else None
+        self._clear_decimated_root = Path(clear_decimated_root) if clear_decimated_root and str(clear_decimated_root).strip() else None
         self._norm_stats_path = norm_stats_path
         self.train = train
         self.Twarn = Twarn
@@ -421,6 +423,8 @@ class EceiDatasetOriginal(data.Dataset):
     def _path_for_shot(self, shot: int, is_disrupt: bool) -> Path:
         """Path to H5 for a given shot (for existence check)."""
         if self._decimated_root is not None:
+            if not is_disrupt and self._clear_decimated_root is not None:
+                return self._clear_decimated_root / f"{shot}.h5"
             return self._decimated_root / f"{shot}.h5"
         folder = "disrupt" if is_disrupt else "clear"
         return Path(self.root) / folder / f"{shot}.h5"
