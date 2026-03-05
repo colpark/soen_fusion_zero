@@ -5,6 +5,7 @@
 #  run_tcn_baseline_ecei_mc.sh but no need to build subseqs_mmap first.
 #
 #  Same training: PreNorm, cosine_warmup, batch balance (--batch-neg-pos-ratio).
+#  Stabilization: clip=0.5, early stopping, higher dropout & weight decay.
 #  Requires shot lists: disrupt_file (required), clear_file (optional).
 #  If --clear-file is not provided, trains disrupt-only.
 #
@@ -31,7 +32,7 @@ export OMP_NUM_THREADS=4
 
 echo "════════════════════════════════════════════════════════════════"
 echo "  Baseline TCN (ecei_mc decimated H5) — no memmap, on-the-fly load"
-echo "  batch=16, PreNorm, cosine_warmup"
+echo "  batch=16, PreNorm, cosine_warmup, clip=0.5, dropout=0.2, wd=5e-4, early_stop=10"
 echo "  GPUs: ${NGPUS}  |  Extra args: $*"
 echo "════════════════════════════════════════════════════════════════"
 
@@ -54,4 +55,8 @@ torchrun \
     --lr 0.0003 \
     --min-lr 0.00001 \
     --batch-neg-pos-ratio 1 \
+    --clip 0.5 \
+    --dropout 0.2 \
+    --weight-decay 5e-4 \
+    --early-stopping-patience 10 \
     "$@"
