@@ -896,15 +896,20 @@ def main():
               f'({len(val_idx)} subseqs total)')
 
     # ── Optional: warm OS page cache so first epoch isn't slow (memmap cold reads) ──
+    # All ranks participate so no rank blocks at barrier for long (avoids timeouts).
     if getattr(args, 'warm_cache', False):
         n_train = len(data_for_train)
         n_warm = getattr(args, 'warm_cache_samples', None)
         n_warm = min(n_warm, n_train) if n_warm is not None else n_train
         if rank == 0:
-            log(rank, f'  Warming cache: touching {n_warm} train samples...')
-            t0_warm = time.perf_counter()
-            for i in tqdm(range(n_warm), desc='Warming cache', unit='samples'):
-                _ = data_for_train[i]
+            log(rank, f'  Warming cache: touching {n_warm} train samples (all ranks)...')
+        t0_warm = time.perf_counter()
+        it = range(n_warm)
+        if rank == 0:
+            it = tqdm(it, desc='Warming cache', unit='samples')
+        for i in it:
+            _ = data_for_train[i]
+        if rank == 0:
             log(rank, f'  Cache warm done in {time.perf_counter() - t0_warm:.1f}s')
         if world_size > 1:
             dist.barrier()

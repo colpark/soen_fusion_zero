@@ -55,4 +55,5 @@ torchrun \
     --batch-neg-pos-ratio 1 \
     --num-workers 4 \
     --warm-cache \
+    --warm-cache-samples 5000 \
     "$@"
