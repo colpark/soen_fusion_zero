@@ -730,8 +730,8 @@ class PrebuiltOriginalSubseqDataset:
 
     def __getitem__(self, index: int):
         X = np.ascontiguousarray(self._X[index]).astype(np.float32)
-        target = np.asarray(self._target[index], dtype=np.float32)
-        weight = np.asarray(self._weight[index], dtype=np.float32)
+        target = np.asarray(self._target[index], dtype=np.float32).copy()
+        weight = np.asarray(self._weight[index], dtype=np.float32).copy()
         return (
             torch.from_numpy(X),
             torch.from_numpy(target),
@@ -821,8 +821,8 @@ class PrebuiltPerSplitSubseqDataset:
         split, local = self._get_split_and_local(index)
         d = self._splits[split]
         X = np.ascontiguousarray(d["X"][local]).astype(np.float32)
-        target = np.asarray(d["target"][local], dtype=np.float32)
-        weight = np.asarray(d["weight"][local], dtype=np.float32)
+        target = np.asarray(d["target"][local], dtype=np.float32).copy()
+        weight = np.asarray(d["weight"][local], dtype=np.float32).copy()
         return (
             torch.from_numpy(X),
             torch.from_numpy(target),

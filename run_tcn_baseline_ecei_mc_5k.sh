@@ -44,4 +44,6 @@ torchrun \
     --lr 0.0003 \
     --min-lr 0.00001 \
     --batch-neg-pos-ratio 1 \
+    --num-workers 4 \
+    --warm-cache \
     "$@"

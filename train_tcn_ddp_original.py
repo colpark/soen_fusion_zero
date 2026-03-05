@@ -675,6 +675,10 @@ def parse_args():
                    help='Neg:pos ratio per batch (1=50/50, 16=16:1 neg:pos; default 1)')
     g.add_argument('--dist-backend', type=str, default=None,
                    help='Distributed backend: nccl (default), gloo (fallback when NCCL not built in)')
+    g.add_argument('--warm-cache', action='store_true',
+                   help='Before training, touch train samples to prime OS page cache (speeds first epoch)')
+    g.add_argument('--warm-cache-samples', type=int, default=None,
+                   help='Max samples to touch when --warm-cache (default: all train)')
 
     # ── checkpointing ──
     g = p.add_argument_group('checkpointing')
@@ -885,6 +889,23 @@ def main():
               f'({len(train_idx)} subseqs total)')
     log(rank, f'  Val  : {len(val_loader)} batches/rank  '
               f'({len(val_idx)} subseqs total)')
+
+    # ── Optional: warm OS page cache so first epoch isn't slow (memmap cold reads) ──
+    if getattr(args, 'warm_cache', False):
+        n_train = len(data_for_train)
+        n_warm = getattr(args, 'warm_cache_samples', None)
+        n_warm = min(n_warm, n_train) if n_warm is not None else n_train
+        if rank == 0:
+            log(rank, f'  Warming cache: touching {n_warm} train samples...')
+            t0_warm = time.perf_counter()
+            step = max(1, n_warm // 20)
+            for i in range(n_warm):
+                _ = data_for_train[i]
+                if (i + 1) % step == 0:
+                    log(rank, f'    warmed {i + 1}/{n_warm}')
+            log(rank, f'  Cache warm done in {time.perf_counter() - t0_warm:.1f}s')
+        if world_size > 1:
+            dist.barrier()
 
     # ── Optimizer ────────────────────────────────────────────────────────
     if args.optimizer == 'adamw':
