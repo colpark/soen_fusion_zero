@@ -673,6 +673,8 @@ def parse_args():
     g.add_argument('--log-every', type=int, default=5)
     g.add_argument('--batch-neg-pos-ratio', type=float, default=1,
                    help='Neg:pos ratio per batch (1=50/50, 16=16:1 neg:pos; default 1)')
+    g.add_argument('--dist-backend', type=str, default=None,
+                   help='Distributed backend: nccl (default), gloo (fallback when NCCL not built in)')
 
     # ── checkpointing ──
     g = p.add_argument_group('checkpointing')
@@ -705,8 +707,18 @@ def main():
         args.norm_stats = str(Path(__file__).resolve().parent / 'norm_stats.npz')
 
     # ── DDP initialisation ───────────────────────────────────────────────
-    dist.init_process_group(backend='nccl')
+    backend = getattr(args, 'dist_backend', None) or 'nccl'
+    try:
+        dist.init_process_group(backend=backend)
+    except RuntimeError as e:
+        if 'NCCL' in str(e) and backend == 'nccl':
+            backend = 'gloo'
+            dist.init_process_group(backend=backend)
+        else:
+            raise
     rank = dist.get_rank()
+    if rank == 0 and backend == 'gloo':
+        print('  [DDP] Using backend=gloo (NCCL not available)')
     world_size = dist.get_world_size()
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     device = torch.device(f'cuda:{local_rank}')
