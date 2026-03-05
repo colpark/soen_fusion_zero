@@ -20,6 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from tqdm import tqdm
 import torch.multiprocessing
 # Use filesystem-based sharing instead of /dev/shm to avoid "Bus error"
 # and "unable to allocate shared memory" on HPC nodes where /dev/shm is limited.
@@ -898,11 +899,8 @@ def main():
         if rank == 0:
             log(rank, f'  Warming cache: touching {n_warm} train samples...')
             t0_warm = time.perf_counter()
-            step = max(1, n_warm // 20)
-            for i in range(n_warm):
+            for i in tqdm(range(n_warm), desc='Warming cache', unit='samples'):
                 _ = data_for_train[i]
-                if (i + 1) % step == 0:
-                    log(rank, f'    warmed {i + 1}/{n_warm}')
             log(rank, f'  Cache warm done in {time.perf_counter() - t0_warm:.1f}s')
         if world_size > 1:
             dist.barrier()
