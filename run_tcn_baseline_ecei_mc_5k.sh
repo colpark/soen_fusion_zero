@@ -15,9 +15,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGPUS="${NGPUS:-4}"
 
-# 5k memmap (output of build_5k_mmap_from_71k.ipynb)
-OUTBASE="${OUTBASE:-/home/idies/workspace/Temporary/dpark1/scratch/soen_fusion_zero}"
-SUBSEQ_5K_DIR="${SUBSEQ_5K_DIR:-${OUTBASE}/subseqs_mmap_5k}"
+# 5k memmap — data path (override with SUBSEQ_5K_DIR or --prebuilt-mmap-dir)
+SUBSEQ_5K_DIR="${SUBSEQ_5K_DIR:-/home/idies/workspace/Temporary/dpark1/scratch/soen_fusion_zero/subseqs_mmap_5k}"
 
 export NCCL_IB_DISABLE=1
 export OMP_NUM_THREADS=4
