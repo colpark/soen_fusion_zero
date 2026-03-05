@@ -46,6 +46,7 @@ from disruptcnn.dataset_original import (
     EceiDatasetOriginal,
     OriginalStyleDatasetForDDP,
     PrebuiltOriginalSubseqDataset,
+    PrebuiltPerSplitSubseqDataset,
 )
 
 
@@ -750,9 +751,15 @@ def main():
     # ── Dataset: prebuilt mmap or original DisruptCNN-style (shot list, flattop) ─
     nrecept_raw = nrecept * args.data_step
     if getattr(args, 'prebuilt_mmap_dir', None) and str(args.prebuilt_mmap_dir).strip():
-        ds = PrebuiltOriginalSubseqDataset(args.prebuilt_mmap_dir)
-        if rank == 0:
-            log(rank, f'  Prebuilt mmap dataset: {len(ds)} sequences (from {args.prebuilt_mmap_dir})')
+        prebuilt_path = Path(args.prebuilt_mmap_dir)
+        if (prebuilt_path / "train" / "X").exists():
+            ds = PrebuiltPerSplitSubseqDataset(args.prebuilt_mmap_dir)
+            if rank == 0:
+                log(rank, f'  Prebuilt mmap (per-split 71k): {len(ds)} sequences (from {args.prebuilt_mmap_dir})')
+        else:
+            ds = PrebuiltOriginalSubseqDataset(args.prebuilt_mmap_dir)
+            if rank == 0:
+                log(rank, f'  Prebuilt mmap dataset: {len(ds)} sequences (from {args.prebuilt_mmap_dir})')
     else:
         clear_file = args.clear_file
         if clear_file and str(clear_file).strip() and not Path(clear_file).exists():

@@ -762,3 +762,93 @@ class PrebuiltOriginalSubseqDataset:
     def _compute_class_weights(self, indices: Optional[np.ndarray] = None):
         """No-op; weights are fixed from preprocessing."""
         pass
+
+
+class PrebuiltPerSplitSubseqDataset:
+    """
+    Prebuilt dataset for per-split memmap layout (e.g. preprocessing_mmap_ecei_mc.ipynb):
+    root/train/X, root/train/target, root/train/weight, root/train/labels.npy, and same for val, test.
+    Presents a unified view so __getitem__(i) and get_split_indices work like PrebuiltOriginalSubseqDataset.
+    Use this to train on the 71k memmap directly without building a separate 5k memmap.
+    """
+
+    def __init__(self, root: str | Path):
+        self._root = Path(root)
+        if not self._root.exists():
+            raise FileNotFoundError(f"Prebuilt mmap dir not found: {self._root}")
+        for split in ("train", "val", "test"):
+            if not (self._root / split / "X").exists():
+                raise FileNotFoundError(f"Per-split layout expected: {self._root / split / 'X'} not found")
+        self._splits = {}
+        for split in ("train", "val", "test"):
+            sub = self._root / split
+            self._splits[split] = {
+                "X": _load_ragged_mmap(sub / "X"),
+                "target": _load_ragged_mmap(sub / "target"),
+                "weight": _load_ragged_mmap(sub / "weight"),
+                "labels": np.load(sub / "labels.npy"),
+            }
+        self._n_train = len(self._splits["train"]["labels"])
+        self._n_val = len(self._splits["val"]["labels"])
+        self._n_test = len(self._splits["test"]["labels"])
+        self._labels = np.concatenate([
+            self._splits["train"]["labels"],
+            self._splits["val"]["labels"],
+            self._splits["test"]["labels"],
+        ])
+        meta_path = self._root / "meta.json"
+        if meta_path.exists():
+            import json
+            with open(meta_path) as f:
+                meta = json.load(f)
+            self._pos_weight = float(meta.get("pos_weight", 1.0))
+            self._neg_weight = float(meta.get("neg_weight", 1.0))
+        else:
+            self._pos_weight = 1.0
+            self._neg_weight = 1.0
+
+    def __len__(self) -> int:
+        return self._n_train + self._n_val + self._n_test
+
+    def _get_split_and_local(self, index: int):
+        if index < self._n_train:
+            return "train", index
+        if index < self._n_train + self._n_val:
+            return "val", index - self._n_train
+        return "test", index - self._n_train - self._n_val
+
+    def __getitem__(self, index: int):
+        split, local = self._get_split_and_local(index)
+        d = self._splits[split]
+        X = np.ascontiguousarray(d["X"][local]).astype(np.float32)
+        target = np.asarray(d["target"][local], dtype=np.float32)
+        weight = np.asarray(d["weight"][local], dtype=np.float32)
+        return (
+            torch.from_numpy(X),
+            torch.from_numpy(target),
+            torch.from_numpy(weight),
+        )
+
+    @property
+    def seq_has_disrupt(self) -> np.ndarray:
+        return self._labels
+
+    def get_split_indices(self, split: str) -> np.ndarray:
+        if split == "train":
+            return np.arange(self._n_train, dtype=np.int64)
+        if split == "val":
+            return np.arange(self._n_train, self._n_train + self._n_val, dtype=np.int64)
+        if split == "test":
+            return np.arange(self._n_train + self._n_val, len(self), dtype=np.int64)
+        raise ValueError(f"Unknown split: {split}")
+
+    @property
+    def pos_weight(self) -> float:
+        return self._pos_weight
+
+    @property
+    def neg_weight(self) -> float:
+        return self._neg_weight
+
+    def _compute_class_weights(self, indices: Optional[np.ndarray] = None):
+        pass
