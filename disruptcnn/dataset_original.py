@@ -770,10 +770,12 @@ class PrebuiltPerSplitSubseqDataset:
     root/train/X, root/train/target, root/train/weight, root/train/labels.npy, and same for val, test.
     Presents a unified view so __getitem__(i) and get_split_indices work like PrebuiltOriginalSubseqDataset.
     Use this to train on the 71k memmap directly without building a separate 5k memmap.
+    Optional decimate_factor > 1: take every decimate_factor-th time step (data and labels) for 1/N-length training.
     """
 
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, decimate_factor: int = 1):
         self._root = Path(root)
+        self._decimate = max(1, int(decimate_factor))
         if not self._root.exists():
             raise FileNotFoundError(f"Prebuilt mmap dir not found: {self._root}")
         for split in ("train", "val", "test"):
@@ -823,6 +825,10 @@ class PrebuiltPerSplitSubseqDataset:
         X = np.ascontiguousarray(d["X"][local]).astype(np.float32)
         target = np.asarray(d["target"][local], dtype=np.float32).copy()
         weight = np.asarray(d["weight"][local], dtype=np.float32).copy()
+        if self._decimate > 1:
+            X = X[:, ::self._decimate].copy()
+            target = target[::self._decimate].copy()
+            weight = weight[::self._decimate].copy()
         return (
             torch.from_numpy(X),
             torch.from_numpy(target),

@@ -617,6 +617,8 @@ def parse_args():
                    help='Disable per-channel normalization')
     g.add_argument('--prebuilt-mmap-dir', type=str, default=None,
                    help='Use pre-saved subsequences from preprocessing_mmap.ipynb (mmap_ninja); skips H5 loading')
+    g.add_argument('--decimate-factor', type=int, default=1,
+                   help='Take every Nth time step from prebuilt memmap (1=full length; 10 => 1/10 length for data and labels)')
 
     # ── model ──
     g = p.add_argument_group('model')
@@ -784,9 +786,11 @@ def main():
     if getattr(args, 'prebuilt_mmap_dir', None) and str(args.prebuilt_mmap_dir).strip():
         prebuilt_path = Path(args.prebuilt_mmap_dir)
         if (prebuilt_path / "train" / "X").exists():
-            ds = PrebuiltPerSplitSubseqDataset(args.prebuilt_mmap_dir)
+            decimate = getattr(args, 'decimate_factor', 1) or 1
+            ds = PrebuiltPerSplitSubseqDataset(args.prebuilt_mmap_dir, decimate_factor=decimate)
             if rank == 0:
-                log(rank, f'  Prebuilt mmap (per-split 71k): {len(ds)} sequences (from {args.prebuilt_mmap_dir})')
+                log(rank, f'  Prebuilt mmap (per-split): {len(ds)} sequences (from {args.prebuilt_mmap_dir})'
+                      + (f'  decimate_factor={decimate}' if decimate > 1 else ''))
         else:
             ds = PrebuiltOriginalSubseqDataset(args.prebuilt_mmap_dir)
             if rank == 0:

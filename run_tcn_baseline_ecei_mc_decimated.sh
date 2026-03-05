@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════
-#  Baseline TCN on ecei_mc **decimated H5** (no memmap). Reads from
-#  clear_decimated/ and disrupt_decimated/ on the fly — slower than
-#  run_tcn_baseline_ecei_mc.sh but no need to build subseqs_mmap first.
+#  TCN on 1/10-length sequences from subseqs_mmap_all (clear + disrupt).
+#  Uses same memmap but --decimate-factor 10: take every 10th time step for
+#  data and labels. Receptive field 1/10 (nrecept-target 3000). Warm-cache.
 #
-#  Same training: PreNorm, cosine_warmup, batch balance (--batch-neg-pos-ratio).
-#  Stabilization: clip=0.5, early stopping, higher dropout & weight decay.
-#  Requires shot lists: disrupt_file (required), clear_file (optional).
-#  If --clear-file is not provided, trains disrupt-only.
+#  Prerequisite: subseqs_mmap_all exists (from preprocessing_mmap_ecei_mc.ipynb).
 #
 #  Usage:
 #      bash run_tcn_baseline_ecei_mc_decimated.sh
-#      bash run_tcn_baseline_ecei_mc_decimated.sh --clear-file /path/to/d3d_clear_ecei.final.txt
-#      bash run_tcn_baseline_ecei_mc_decimated.sh --batch-neg-pos-ratio 16
+#      bash run_tcn_baseline_ecei_mc_decimated.sh --prebuilt-mmap-dir /path/to/subseqs_mmap_all
 # ═══════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -20,34 +16,36 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGPUS="${NGPUS:-4}"
 
-ECEIMC_BASE="${ECEIMC_BASE:-/home/idies/workspace/Storage/yhuang2/persistent/ecei_mc}"
-DISRUPT_DECIMATED="${ECEIMC_BASE}/disrupt_decimated"
-CLEAR_DECIMATED="${ECEIMC_BASE}/clear_decimated"
-NORM_STATS="${ECEIMC_BASE}/norm_stats.npz"
-# Shot lists (project-relative or absolute)
-DISRUPT_FILE="${DISRUPT_FILE:-disruptcnn/shots/d3d_disrupt_ecei.final.txt}"
+# Full memmap (per-split layout: train/val/test); we decimate by 10 in the loader
+PREBUILT_DIR="${PREBUILT_DIR:-/home/idies/workspace/Temporary/dpark1/scratch/soen_fusion_zero/subseqs_mmap_all}"
+DECIMATE=10
+
+# Effective sequence length after 1/10 decimation (71k -> 7100 time steps)
+NSUB=7100
+DATA_STEP=1
+# Receptive field 1/10 of full-length default (30k -> 3k)
+NRECEPT_TARGET=3000
 
 export NCCL_IB_DISABLE=1
 export OMP_NUM_THREADS=4
 
 echo "════════════════════════════════════════════════════════════════"
-echo "  Baseline TCN (ecei_mc decimated H5) — no memmap, on-the-fly load"
-echo "  batch=16, PreNorm, cosine_warmup, clip=0.5, dropout=0.2, wd=5e-4, early_stop=10"
-echo "  GPUs: ${NGPUS}  |  Extra args: $*"
+echo "  TCN 1/10 length (ecei_mc) — PreNorm, decimate_factor=${DECIMATE}"
+echo "  Prebuilt: ${PREBUILT_DIR}"
+echo "  nsub=${NSUB} (T_sub after decimation), nrecept_target=${NRECEPT_TARGET}, batch=16, GPUs: ${NGPUS}"
+echo "  Extra args: $*"
 echo "════════════════════════════════════════════════════════════════"
 
-# Do not pass --prebuilt-mmap-dir so we use EceiDatasetOriginal + decimated roots.
-# Optional: add --clear-file /path/to/d3d_clear_ecei.final.txt to include clear shots.
 torchrun \
     --standalone \
     --nproc_per_node="${NGPUS}" \
     "${SCRIPT_DIR}/train_tcn_ddp_original.py" \
-    --root "${ECEIMC_BASE}" \
-    --decimated-root "${DISRUPT_DECIMATED}" \
-    --clear-decimated-root "${CLEAR_DECIMATED}" \
-    --disrupt-file "${DISRUPT_FILE}" \
-    --norm-stats "${NORM_STATS}" \
-    --flattop-only \
+    --prebuilt-mmap-dir "${PREBUILT_DIR}" \
+    --decimate-factor "${DECIMATE}" \
+    --nsub "${NSUB}" \
+    --data-step "${DATA_STEP}" \
+    --nrecept-target "${NRECEPT_TARGET}" \
+    --dilation-base 4 \
     --use-prenorm \
     --lr-schedule cosine_warmup \
     --warmup-epochs 5 \
@@ -55,8 +53,6 @@ torchrun \
     --lr 0.0003 \
     --min-lr 0.00001 \
     --batch-neg-pos-ratio 1 \
-    --clip 0.5 \
-    --dropout 0.2 \
-    --weight-decay 5e-4 \
-    --early-stopping-patience 10 \
+    --num-workers 4 \
+    --warm-cache \
     "$@"
