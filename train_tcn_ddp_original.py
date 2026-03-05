@@ -706,6 +706,15 @@ def main():
     if args.norm_stats is None:
         args.norm_stats = str(Path(__file__).resolve().parent / 'norm_stats.npz')
 
+    # ── Short-sequence dilation (e.g. 5k): cap receptive field and use smaller base ──
+    T_sub = args.nsub // args.data_step  # effective sequence length in time steps
+    if T_sub < 15_000 and args.nrecept_target > T_sub:
+        cap = max(500, T_sub // 2)
+        if args.nrecept_target > cap:
+            args.nrecept_target = cap
+        if args.dilation_base > 5:
+            args.dilation_base = 4
+
     # ── DDP initialisation ───────────────────────────────────────────────
     backend = getattr(args, 'dist_backend', None) or 'nccl'
     try:
@@ -719,6 +728,8 @@ def main():
     rank = dist.get_rank()
     if rank == 0 and backend == 'gloo':
         print('  [DDP] Using backend=gloo (NCCL not available)')
+    if rank == 0 and T_sub < 15_000:
+        log(rank, f'  Short-sequence dilation: T_sub={T_sub}, nrecept_target={args.nrecept_target}, dilation_base={args.dilation_base}')
     world_size = dist.get_world_size()
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     device = torch.device(f'cuda:{local_rank}')

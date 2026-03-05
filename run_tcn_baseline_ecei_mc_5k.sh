@@ -28,12 +28,15 @@ echo "  nsub=50000 (T_sub=5k), batch=16, GPUs: ${NGPUS}"
 echo "  Extra args: $*"
 echo "════════════════════════════════════════════════════════════════"
 
+# 5k dilation: smaller receptive field (~1.5k) and dilation_base=4 → [1,4,16,33]
 torchrun \
     --standalone \
     --nproc_per_node="${NGPUS}" \
     "${SCRIPT_DIR}/train_tcn_ddp_original.py" \
     --prebuilt-mmap-dir "${SUBSEQ_5K_DIR}" \
     --nsub 50000 \
+    --nrecept-target 1500 \
+    --dilation-base 4 \
     --use-prenorm \
     --lr-schedule cosine_warmup \
     --warmup-epochs 5 \
