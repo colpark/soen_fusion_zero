@@ -826,7 +826,10 @@ class PrebuiltPerSplitSubseqDataset:
         target = np.asarray(d["target"][local], dtype=np.float32).copy()
         weight = np.asarray(d["weight"][local], dtype=np.float32).copy()
         if self._decimate > 1:
-            # Decimate on the time axis (last dim); X may be (C, T) or (20, 8, T)
+            # Decimate on the time axis (last dim); X may be (C, T) or (20, 8, T).
+            # Note: we already read the full segment above, so I/O is ~decimate_factor× heavier
+            # than needed. For faster loading, use a pre-decimated memmap (build_decimated_1_10_mmap.py)
+            # and decimate_factor=1.
             X = X[..., ::self._decimate].copy()
             target = target[::self._decimate].copy()
             weight = weight[::self._decimate].copy()

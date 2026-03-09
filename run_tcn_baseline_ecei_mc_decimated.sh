@@ -6,6 +6,10 @@
 #
 #  Prerequisite: subseqs_mmap_all exists (from preprocessing_mmap_ecei_mc.ipynb).
 #
+#  Faster loading (avoids 10× I/O): build pre-decimated memmap once, then train from it:
+#    python build_decimated_1_10_mmap.py --source .../subseqs_mmap_all --out .../subseqs_mmap_all_decimated
+#    bash run_tcn_baseline_ecei_mc_decimated.sh --prebuilt-mmap-dir .../subseqs_mmap_all_decimated --decimate-factor 1
+#
 #  Usage:
 #      bash run_tcn_baseline_ecei_mc_decimated.sh
 #      bash run_tcn_baseline_ecei_mc_decimated.sh --prebuilt-mmap-dir /path/to/subseqs_mmap_all
