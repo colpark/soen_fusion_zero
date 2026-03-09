@@ -769,9 +769,10 @@ def main():
         else:
             ds_prebuilt = PrebuiltOriginalSubseqDataset(args.prebuilt_mmap_dir)
         sample_X = ds_prebuilt[0][0]
-        args.input_channels = sample_X.shape[0]
+        # X can be (C, T) or (20, 8, T); training uses view(B, -1, T) so channels = prod(shape[:-1])
+        args.input_channels = int(np.prod(sample_X.shape[:-1]))
         if rank == 0:
-            log(rank, f'  Inferred input_channels={args.input_channels} from prebuilt memmap')
+            log(rank, f'  Inferred input_channels={args.input_channels} from prebuilt memmap (shape {tuple(sample_X.shape)})')
 
     # ── Build model ──────────────────────────────────────────────────────
     model, nrecept, dilation_sizes = build_model(

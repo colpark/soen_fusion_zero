@@ -826,7 +826,8 @@ class PrebuiltPerSplitSubseqDataset:
         target = np.asarray(d["target"][local], dtype=np.float32).copy()
         weight = np.asarray(d["weight"][local], dtype=np.float32).copy()
         if self._decimate > 1:
-            X = X[:, ::self._decimate].copy()
+            # Decimate on the time axis (last dim); X may be (C, T) or (20, 8, T)
+            X = X[..., ::self._decimate].copy()
             target = target[::self._decimate].copy()
             weight = weight[::self._decimate].copy()
         return (
