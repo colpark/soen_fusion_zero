@@ -15,6 +15,7 @@ import json
 import math
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -682,6 +683,8 @@ def parse_args():
                    help='Before training, touch train samples to prime OS page cache (speeds first epoch)')
     g.add_argument('--warm-cache-samples', type=int, default=None,
                    help='Max samples to touch when --warm-cache (default: all train)')
+    g.add_argument('--warm-cache-workers', type=int, default=8,
+                   help='Parallel workers for cache warming (default: 8); more = faster warm, more I/O concurrency)')
 
     # ── checkpointing ──
     g = p.add_argument_group('checkpointing')
@@ -907,19 +910,31 @@ def main():
               f'({len(val_idx)} subseqs total)')
 
     # ── Optional: warm OS page cache so first epoch isn't slow (memmap cold reads) ──
-    # All ranks participate so no rank blocks at barrier for long (avoids timeouts).
+    # All ranks participate; use --warm-cache-workers N to touch in parallel (faster).
     if getattr(args, 'warm_cache', False):
         n_train = len(data_for_train)
         n_warm = getattr(args, 'warm_cache_samples', None)
         n_warm = min(n_warm, n_train) if n_warm is not None else n_train
+        n_workers = max(1, getattr(args, 'warm_cache_workers', 8))
         if rank == 0:
-            log(rank, f'  Warming cache: touching {n_warm} train samples (all ranks)...')
+            log(rank, f'  Warming cache: touching {n_warm} train samples (all ranks, {n_workers} workers/rank)...')
         t0_warm = time.perf_counter()
-        it = range(n_warm)
-        if rank == 0:
-            it = tqdm(it, desc='Warming cache', unit='samples')
-        for i in it:
-            _ = data_for_train[i]
+
+        def _touch_chunk(indices):
+            for i in indices:
+                _ = data_for_train[i]
+
+        chunk_size = max(1, (n_warm + n_workers - 1) // n_workers)
+        chunks = [list(range(s, min(s + chunk_size, n_warm))) for s in range(0, n_warm, chunk_size)]
+        with ThreadPoolExecutor(max_workers=n_workers) as ex:
+            futures = [ex.submit(_touch_chunk, c) for c in chunks if c]
+            if rank == 0:
+                for _ in tqdm(as_completed(futures), total=len(futures), desc='Warming cache', unit='chunk'):
+                    pass
+            else:
+                for f in as_completed(futures):
+                    f.result()
+
         if rank == 0:
             log(rank, f'  Cache warm done in {time.perf_counter() - t0_warm:.1f}s')
         if world_size > 1:
