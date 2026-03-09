@@ -923,14 +923,17 @@ def main():
         def _touch_chunk(indices):
             for i in indices:
                 _ = data_for_train[i]
+            return len(indices)
 
         chunk_size = max(1, (n_warm + n_workers - 1) // n_workers)
         chunks = [list(range(s, min(s + chunk_size, n_warm))) for s in range(0, n_warm, chunk_size)]
         with ThreadPoolExecutor(max_workers=n_workers) as ex:
             futures = [ex.submit(_touch_chunk, c) for c in chunks if c]
             if rank == 0:
-                for _ in tqdm(as_completed(futures), total=len(futures), desc='Warming cache', unit='chunk'):
-                    pass
+                pbar = tqdm(total=n_warm, desc='Warming cache', unit='samples')
+                for f in as_completed(futures):
+                    pbar.update(f.result())
+                pbar.close()
             else:
                 for f in as_completed(futures):
                     f.result()
