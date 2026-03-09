@@ -68,22 +68,25 @@ def benchmark_path(path: Path, n_samples: int, n_workers: int, label: str) -> di
     n_samples = min(n_samples, total)
     indices = np.linspace(0, total - 1, n_samples, dtype=int)
 
+    def touch_one(i):
+        """Load segment and force read of data (not just view), like training does."""
+        arr = np.asarray(mmap[i])
+        nbytes = arr.nbytes
+        # Force OS to actually page in the bytes (otherwise benchmark was only creating views)
+        _ = arr.sum()
+        return nbytes
+
     if n_workers <= 1:
         t0 = time.perf_counter()
         bytes_read = 0
         for i in indices:
-            arr = np.asarray(mmap[i])
-            bytes_read += arr.nbytes
+            bytes_read += touch_one(i)
         elapsed = time.perf_counter() - t0
     else:
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        def read_one(idx):
-            arr = np.asarray(mmap[idx])
-            return arr.nbytes
-
         t0 = time.perf_counter()
         with ThreadPoolExecutor(max_workers=n_workers) as ex:
-            futures = [ex.submit(read_one, i) for i in indices]
+            futures = [ex.submit(touch_one, i) for i in indices]
             bytes_read = sum(f.result() for f in as_completed(futures))
         elapsed = time.perf_counter() - t0
 
@@ -149,6 +152,9 @@ def main():
             r = benchmark_path(path, args.samples, args.workers, label)
             print(f"  {r['label']}: {path}")
             print(f"    {r['time_s']:.2f} s  |  {r['samples_per_s']:.1f} samples/s  |  {r['MB_per_s']:.1f} MB/s  ({r['MB_read']:.1f} MB read)")
+            if r["MB_per_s"] > 10_000:
+                print("    → Speed > 10 GB/s means data was served from RAM (page cache), not disk.")
+                print("      To measure cold disk I/O: run 'sync; echo 3 | sudo tee /proc/sys/vm/drop_caches' then re-run this.")
             print()
         except Exception as e:
             print(f"  {label}: {path} — ERROR: {e}")
