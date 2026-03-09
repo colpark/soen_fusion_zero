@@ -123,9 +123,12 @@ def main():
         for path, _ in paths:
             generate_dummy_mmap(path, n_segments=args.segments, T=args.T)
         print()
+        print("Note: data was just written, so it is in OS page cache (RAM). The read below measures")
+        print("      memory bandwidth, not disk/network. Real subseqs_mmap_all is cold → much slower.")
+        print()
 
     print("Memmap read benchmark (train/X)")
-    print(f"  samples={args.samples}, workers={args.workers}  (run should take many seconds to reflect real I/O)")
+    print(f"  samples={args.samples}, workers={args.workers}")
     print()
 
     for path, label in paths:
@@ -136,8 +139,6 @@ def main():
             r = benchmark_path(path, args.samples, args.workers, label)
             print(f"  {r['label']}: {path}")
             print(f"    {r['time_s']:.2f} s  |  {r['samples_per_s']:.1f} samples/s  |  {r['MB_per_s']:.1f} MB/s  ({r['MB_read']:.1f} MB read)")
-            if r['time_s'] < 1.0:
-                print("    (run was very short; use --segments 5000 or 30000 and --samples same to get sustained I/O speed)")
             print()
         except Exception as e:
             print(f"  {label}: {path} — ERROR: {e}")
@@ -145,6 +146,10 @@ def main():
 
     if len(paths) > 1:
         print("Higher MB/s suggests that path is faster (e.g. /temporary vs /storage).")
+    if args.generate:
+        print()
+        print("To measure cold I/O (real disk speed): use --no-generate and point at existing")
+        print("  subseqs_mmap_all (or drop caches between generate and read: sync; echo 3 | sudo tee /proc/sys/vm/drop_caches).")
 
 
 if __name__ == "__main__":
