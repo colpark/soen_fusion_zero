@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════════════
 #  TCN on 1/10-length sequences from subseqs_mmap_all (clear + disrupt).
 #  Uses same memmap but --decimate-factor 10: take every 10th time step for
-#  data and labels. Receptive field 1/10 (nrecept-target 3000). Warm-cache.
+#  data and labels. Receptive field 1/10 (nrecept-target 3000). Add --warm-cache to warm page cache.
 #
 #  Prerequisite: subseqs_mmap_all exists (from preprocessing_mmap_ecei_mc.ipynb).
 #
@@ -54,5 +54,4 @@ torchrun \
     --min-lr 0.00001 \
     --batch-neg-pos-ratio 1 \
     --num-workers 4 \
-    --warm-cache \
     "$@"
