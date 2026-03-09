@@ -759,6 +759,20 @@ def main():
     log(rank, f'  Epochs: {args.epochs}  |  warmup: {args.warmup_epochs} ep')
     log(rank, '=' * 90)
 
+    # ── When using prebuilt memmap: infer input_channels from data (ecei_mc uses 20, not 160) ──
+    ds_prebuilt = None
+    if getattr(args, 'prebuilt_mmap_dir', None) and str(args.prebuilt_mmap_dir).strip():
+        prebuilt_path = Path(args.prebuilt_mmap_dir)
+        if (prebuilt_path / "train" / "X").exists():
+            decimate = getattr(args, 'decimate_factor', 1) or 1
+            ds_prebuilt = PrebuiltPerSplitSubseqDataset(args.prebuilt_mmap_dir, decimate_factor=decimate)
+        else:
+            ds_prebuilt = PrebuiltOriginalSubseqDataset(args.prebuilt_mmap_dir)
+        sample_X = ds_prebuilt[0][0]
+        args.input_channels = sample_X.shape[0]
+        if rank == 0:
+            log(rank, f'  Inferred input_channels={args.input_channels} from prebuilt memmap')
+
     # ── Build model ──────────────────────────────────────────────────────
     model, nrecept, dilation_sizes = build_model(
         args.input_channels, 1, args.levels, args.nhid,
@@ -785,18 +799,12 @@ def main():
 
     # ── Dataset: prebuilt mmap or original DisruptCNN-style (shot list, flattop) ─
     nrecept_raw = nrecept * args.data_step
-    if getattr(args, 'prebuilt_mmap_dir', None) and str(args.prebuilt_mmap_dir).strip():
-        prebuilt_path = Path(args.prebuilt_mmap_dir)
-        if (prebuilt_path / "train" / "X").exists():
-            decimate = getattr(args, 'decimate_factor', 1) or 1
-            ds = PrebuiltPerSplitSubseqDataset(args.prebuilt_mmap_dir, decimate_factor=decimate)
-            if rank == 0:
-                log(rank, f'  Prebuilt mmap (per-split): {len(ds)} sequences (from {args.prebuilt_mmap_dir})'
-                      + (f'  decimate_factor={decimate}' if decimate > 1 else ''))
-        else:
-            ds = PrebuiltOriginalSubseqDataset(args.prebuilt_mmap_dir)
-            if rank == 0:
-                log(rank, f'  Prebuilt mmap dataset: {len(ds)} sequences (from {args.prebuilt_mmap_dir})')
+    if ds_prebuilt is not None:
+        ds = ds_prebuilt
+        decimate = getattr(args, 'decimate_factor', 1) or 1
+        if rank == 0:
+            log(rank, f'  Prebuilt mmap (per-split): {len(ds)} sequences (from {args.prebuilt_mmap_dir})'
+                  + (f'  decimate_factor={decimate}' if decimate > 1 else ''))
     else:
         clear_file = args.clear_file
         if clear_file and str(clear_file).strip() and not Path(clear_file).exists():
