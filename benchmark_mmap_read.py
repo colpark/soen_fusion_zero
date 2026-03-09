@@ -106,17 +106,27 @@ def main():
     p.add_argument("--no-generate", action="store_false", dest="generate", help="Use existing data at path(s), do not generate")
     p.add_argument("--segments", type=int, default=5000, help="Dummy segments when using --generate (default 5000; use 30000 to match subseqs_mmap_all)")
     p.add_argument("--T", type=int, default=2000, dest="T", help="Time dimension per segment when using --generate (default 2000; 5k segs ~6GB, 30k ~38GB)")
-    p.add_argument("--samples", type=int, default=None, help="Samples to read (default: same as --segments when generating, else 5000)")
+    p.add_argument("--samples", type=int, default=None, help="Samples to read (default: all segments when --no-generate, else same as --segments)")
     p.add_argument("--workers", type=int, default=1, help="Parallel readers (default 1)")
     p.set_defaults(generate=True)
     args = p.parse_args()
 
-    if args.samples is None:
-        args.samples = args.segments if args.generate else 5000
-
     paths = [(Path(args.path), "path")]
     if args.path2:
         paths.append((Path(args.path2), "path2"))
+
+    if args.samples is None and args.generate:
+        args.samples = args.segments
+    elif args.samples is None and not args.generate:
+        # Default: read full dataset so we exceed cache and measure real I/O
+        try:
+            mmap = load_train_x(Path(args.path))
+            args.samples = len(mmap)
+            print(f"  --no-generate: will read all {args.samples} segments (full dataset).")
+        except Exception as e:
+            print(f"  Could not open {args.path} to get segment count: {e}")
+            args.samples = 5000
+        print()
 
     if args.generate:
         print("Generating dummy memmap data...")
