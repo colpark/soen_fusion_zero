@@ -987,7 +987,7 @@ def main():
     # ── Checkpoint directory ─────────────────────────────────────────────
     ckpt_dir = Path(args.checkpoint_dir)
     if rank == 0:
-        ckpt_dir.mkdir(exist_ok=True)
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()
 
     # ── Resume from checkpoint ───────────────────────────────────────────
