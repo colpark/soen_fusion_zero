@@ -712,9 +712,16 @@ def main():
         start_time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
         args.checkpoint_dir = str(Path(args.checkpoint_dir) / "{}_{}".format(config_tag, start_time_str))
 
-    # Norm stats: default to project root (soen_fusion_zero/norm_stats.npz)
+    # Norm stats: if not set, try project root then idies shared path; use first that exists
     if args.norm_stats is None:
-        args.norm_stats = str(Path(__file__).resolve().parent / 'norm_stats.npz')
+        project_norm = Path(__file__).resolve().parent / 'norm_stats.npz'
+        idies_shared = Path('/home/idies/workspace/Storage/yhuang2/persistent/ecei/norm_stats.npz')
+        for candidate in [project_norm, idies_shared]:
+            if candidate.exists():
+                args.norm_stats = str(candidate)
+                break
+        if args.norm_stats is None:
+            args.norm_stats = str(project_norm)  # fail later with clear path in error
 
     # ── Short-sequence dilation (e.g. 5k): cap receptive field and use smaller base ──
     T_sub = args.nsub // args.data_step  # effective sequence length in time steps
