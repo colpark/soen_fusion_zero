@@ -376,11 +376,14 @@ class EceiDatasetOriginal(data.Dataset):
             norm_path = self._norm_stats_path
         else:
             norm_path = None
+            idies_shared = "/home/idies/workspace/Storage/yhuang2/persistent/ecei/norm_stats.npz"
             for candidate in [
+                self._norm_stats_path,
                 os.path.join(self.root, "normalization.npz"),
                 os.path.join(self.root, "norm_stats.npz"),
                 str(self._decimated_root / "normalization.npz") if self._decimated_root else None,
                 str(self._decimated_root / "norm_stats.npz") if self._decimated_root else None,
+                idies_shared,
             ]:
                 if candidate and os.path.isfile(candidate):
                     norm_path = candidate
