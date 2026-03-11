@@ -1,0 +1,7 @@
+# WaveStitch backbone + ECEi data
+torch>=1.10
+numpy
+mmap-ninja
+einops
+opt-einsum
+scipy
