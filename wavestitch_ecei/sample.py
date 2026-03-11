@@ -76,11 +76,10 @@ def main():
             diffusion_config[k] = v.to(device)
 
     B = args.num_samples
-    # Start from pure noise (B, 162, T); we will fix channels 160,161 to condition
-    x = torch.randn(B, IN_CHANNELS, T, device=device)
-    class_row = torch.full((B, 1, T), float(args.class_id), device=device)
-    t_row = torch.full((B, 1, T), float(args.t_disrupt), device=device)
-    x[:, SIGNAL_CHANNELS:, :] = torch.cat([class_row, t_row], dim=1)
+    # Model expects (B, T, 162). Start from noise; fix columns 160,161 to condition.
+    x = torch.randn(B, T, IN_CHANNELS, device=device)
+    x[:, :, 160] = float(args.class_id)
+    x[:, :, 161] = float(args.t_disrupt)
 
     alpha_bars = diffusion_config["alpha_bars"]
     alphas = diffusion_config["alphas"]
@@ -91,20 +90,21 @@ def main():
         for step in range(T_steps - 1, -1, -1):
             times = torch.full((B, 1), step, device=device, dtype=torch.long)
             epsilon_pred = model(x, times)
-            # Only update signal channels; keep condition channels fixed
+            # epsilon_pred (B, 160, T); signal in x is (B, T, 160)
             alpha_bar_t = alpha_bars[step].to(device)
             alpha_t = alphas[step].to(device)
             beta_t = betas[step].to(device)
             diff_coeff = beta_t / torch.sqrt(1 - alpha_bar_t + 1e-8)
-            x_new = (x[:, :OUT_CHANNELS, :] - diff_coeff * epsilon_pred) / torch.sqrt(alpha_t + 1e-8)
+            signal_ctx = x[:, :, :OUT_CHANNELS].permute(0, 2, 1)
+            x_prev_signal = (signal_ctx - diff_coeff * epsilon_pred) / torch.sqrt(alpha_t + 1e-8)
             if step > 0:
                 alpha_bar_prev = alpha_bars[step - 1].to(device)
                 var = beta_t * (1 - alpha_bar_prev) / (1 - alpha_bar_t + 1e-8)
                 var = torch.clamp(var, min=1e-20)
-                x_new = x_new + torch.sqrt(var) * torch.randn_like(x_new, device=device)
-            x = torch.cat([x_new, x[:, SIGNAL_CHANNELS:, :]], dim=1)
+                x_prev_signal = x_prev_signal + torch.sqrt(var) * torch.randn_like(x_prev_signal, device=device)
+            x[:, :, :OUT_CHANNELS] = x_prev_signal.permute(0, 2, 1)
 
-    samples = x[:, :SIGNAL_CHANNELS, :].cpu().numpy()
+    samples = x[:, :, :SIGNAL_CHANNELS].permute(0, 2, 1).cpu().numpy()
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     np.save(out_dir / f"samples_class{args.class_id}_td{args.t_disrupt:.2f}.npy", samples)

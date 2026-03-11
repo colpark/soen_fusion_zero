@@ -36,22 +36,23 @@ IN_CHANNELS = SIGNAL_CHANNELS + COND_CHANNELS
 OUT_CHANNELS = SIGNAL_CHANNELS
 
 
-def build_batch_162(x_list, class_ids, t_disrupts, device):
+def build_batch_btc(x_list, class_ids, t_disrupts, device):
     """
-    x_list: list of (C, T) tensors, C can be 160 or 20*8.
-    class_ids: (B,) long or int.
-    t_disrupts: (B,) float.
-    Returns: (B, 162, T) on device; channels 0..159 = flattened signal, 160 = class, 161 = t_disrupt.
+    WaveStitch expects (B, T, C): batch, time, channels.
+    x_list: list of (C, T) tensors.
+    Returns: (B, T, 162) on device; dim 2: 0..159 = signal, 160 = class, 161 = t_disrupt.
     """
     B = len(x_list)
     out = []
     for i in range(B):
         x = x_list[i]
-        x_flat = x.reshape(-1, x.shape[-1])  # (160, T) or (160, T)
+        x_flat = x.reshape(-1, x.shape[-1])  # (160, T)
         T = x_flat.shape[1]
-        class_row = torch.full((1, T), float(class_ids[i].item()), dtype=torch.float32, device=x.device)
-        t_row = torch.full((1, T), float(t_disrupts[i].item()), dtype=torch.float32, device=x.device)
-        out.append(torch.cat([x_flat, class_row, t_row], dim=0))
+        # (160, T) -> (T, 160); then append cond columns -> (T, 162)
+        sig = x_flat.t()  # (T, 160)
+        class_col = torch.full((T, 1), float(class_ids[i].item()), dtype=torch.float32, device=x.device)
+        t_col = torch.full((T, 1), float(t_disrupts[i].item()), dtype=torch.float32, device=x.device)
+        out.append(torch.cat([sig, class_col, t_col], dim=1))
     return torch.stack(out, dim=0).to(device)
 
 
@@ -114,9 +115,9 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.MSELoss()
 
-    # Condition channels (160, 161) are not noised — same as WaveStitch hierarchical columns
-    conditional_mask = torch.ones(1, IN_CHANNELS, 1, device=device)
-    conditional_mask[:, :SIGNAL_CHANNELS, :] = 0
+    # Condition channels 160, 161 are not noised. Layout (B, T, 162).
+    conditional_mask = torch.ones(1, 1, IN_CHANNELS, device=device)
+    conditional_mask[:, :, :SIGNAL_CHANNELS] = 0
 
     for epoch in range(args.epochs):
         model.train()
@@ -127,14 +128,14 @@ def main():
             class_ids = torch.tensor([b[1] for b in batch_tuples], dtype=torch.long)
             t_disrupts = torch.tensor([b[2] for b in batch_tuples], dtype=torch.float32)
 
-            batch = build_batch_162(x_list, class_ids, t_disrupts, device)
-            B, C, L = batch.shape
+            batch = build_batch_btc(x_list, class_ids, t_disrupts, device)
+            B, L, C = batch.shape
             assert C == IN_CHANNELS and L == T
 
-            # Normalise signal channels only (0..159)
-            sig = batch[:, :SIGNAL_CHANNELS, :]
+            # Normalise signal columns only (0..159)
+            sig = batch[:, :, :SIGNAL_CHANNELS]
             sig = (sig - sig.mean()) / (sig.std() + 1e-5)
-            batch = torch.cat([sig, batch[:, SIGNAL_CHANNELS:, :]], dim=1)
+            batch = torch.cat([sig, batch[:, :, SIGNAL_CHANNELS:]], dim=2)
 
             timesteps = torch.randint(diffusion_config["T"], size=(B,), device=device)
             sigmas = torch.randn_like(batch, device=device)
@@ -142,14 +143,14 @@ def main():
             alpha_bars = diffusion_config["alpha_bars"].to(device)
             coeff_1 = torch.sqrt(alpha_bars[timesteps]).reshape(B, 1, 1)
             coeff_2 = torch.sqrt(1 - alpha_bars[timesteps]).reshape(B, 1, 1)
-            mask = conditional_mask.expand(B, -1, L)
+            mask = conditional_mask.expand(B, L, -1)
             batch_noised = (1 - mask) * (coeff_1 * batch + coeff_2 * sigmas) + mask * batch
 
             timesteps = timesteps.reshape(-1, 1)
             sigmas_predicted = model(batch_noised, timesteps)
 
-            # Loss only on predicted noise for signal channels (WaveStitch: non_hier_cols)
-            loss = criterion(sigmas_predicted, sigmas[:, :OUT_CHANNELS, :])
+            # Model returns (B, 160, T); sigmas for signal are (B, T, 160) -> permute to (B, 160, T)
+            loss = criterion(sigmas_predicted, sigmas[:, :, :OUT_CHANNELS].permute(0, 2, 1))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
