@@ -71,13 +71,16 @@ class DownBlock(nn.Module):
 
 
 class UpBlock(nn.Module):
-    def __init__(self, in_ch: int, out_ch: int, cond_dim: int):
+    def __init__(self, in_ch: int, out_ch: int, skip_ch: int, cond_dim: int):
         super().__init__()
         self.upsample = nn.ConvTranspose2d(in_ch, in_ch, 4, stride=2, padding=1)
-        self.res = ResBlockAdaLN(in_ch + out_ch, out_ch, cond_dim)
+        self.res = ResBlockAdaLN(in_ch + skip_ch, out_ch, cond_dim)
 
     def forward(self, x: torch.Tensor, skip: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         x = self.upsample(x)
+        # Align spatial size to skip (stride-2 down/up can differ by 1, e.g. 10 vs 20)
+        if x.shape[2:] != skip.shape[2:]:
+            x = torch.nn.functional.interpolate(x, size=skip.shape[2:], mode="bilinear", align_corners=False)
         x = torch.cat([x, skip], dim=1)
         return self.res(x, cond)
 
@@ -127,11 +130,12 @@ class UNet2DAdaLN(nn.Module):
             DownBlock(chs[2], chs[3], cond_dim),
         ])
         self.mid = ResBlockAdaLN(chs[3], chs[3], cond_dim)
+        # skip_ch matches encoder: reversed skips have channels [chs[3], chs[2], chs[1], chs[0]]
         self.up = nn.ModuleList([
-            UpBlock(chs[3], chs[2], cond_dim),
-            UpBlock(chs[2], chs[1], cond_dim),
-            UpBlock(chs[1], chs[0], cond_dim),
-            UpBlock(chs[0], chs[0], cond_dim),
+            UpBlock(chs[3], chs[2], chs[3], cond_dim),
+            UpBlock(chs[2], chs[1], chs[2], cond_dim),
+            UpBlock(chs[1], chs[0], chs[1], cond_dim),
+            UpBlock(chs[0], chs[0], chs[0], cond_dim),
         ])
         self.norm_out = nn.GroupNorm(8, chs[0])
         self.conv_out = nn.Conv2d(chs[0], out_channels, 3, padding=1)
