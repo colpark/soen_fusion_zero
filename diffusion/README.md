@@ -38,8 +38,12 @@ diffusion/
 From **repo root**:
 
 ```bash
-# Train
+# Train (single GPU)
 python diffusion/train.py --prebuilt-mmap-dir ./subseqs_original_mmap --decimate-factor 10 --epochs 100
+
+# Train (distributed, multi-GPU)
+torchrun --nproc_per_node=4 diffusion/train.py --prebuilt-mmap-dir ./subseqs_original_mmap --decimate-factor 10 --epochs 100 --batch-size 8
+# Effective batch size = batch-size × nproc_per_node (e.g. 8×4=32). Checkpoints and sample viz are written by rank 0 only.
 
 # Sample (clear)
 python diffusion/sample.py --checkpoint diffusion/checkpoints/ckpt_epoch_100.pt --class-id 0 --num-samples 8
