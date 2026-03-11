@@ -49,9 +49,9 @@ def main():
         pin_memory=(device.type == "cuda"),
     )
 
-    # (C, T) -> (1, C, T) as 2D image; or (1, 160, 7512)
+    # (C, T) or (20, 8, T) -> treat as (1, 160, T) for 2D UNet
     sample_x, _, _ = train_ds[0]
-    C, T = sample_x.shape
+    T = sample_x.shape[-1]
     in_channels = 1
     model = UNet2DAdaLN(
         in_channels=in_channels,
@@ -72,8 +72,8 @@ def main():
         n_batches = 0
         for batch in train_loader:
             x, class_id, t_disrupt = batch
-            # x (B, C, T) -> (B, 1, C, T) for 2D conv
-            x = x.unsqueeze(1).to(device)
+            # x (B, C, T) or (B, 20, 8, T) -> (B, 1, 160, T) for 2D conv
+            x = x.view(x.shape[0], -1, x.shape[-1]).unsqueeze(1).to(device)
             x = (x - x.mean()) / (x.std() + 1e-5)
             x = torch.clamp(x, -3.0, 3.0) / 3.0
             class_id = class_id.to(device)
