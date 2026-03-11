@@ -1,0 +1,5 @@
+# ECEi diffusion — optional; repo root may already have torch
+torch>=1.13
+numpy
+mmap-ninja
+# pyyaml  # if using YAML config

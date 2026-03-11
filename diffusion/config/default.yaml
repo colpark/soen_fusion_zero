@@ -1,0 +1,21 @@
+# Diffusion model config for (160, 7512) decimated ECEi.
+# Data: same source as TCN subsample run (subseqs_original_mmap, 1/10 decimation).
+
+data:
+  prebuilt_mmap_dir: "./subseqs_original_mmap"  # or absolute path
+  decimate_factor: 10
+  channels: 160
+  time_steps: 7512   # approximate after decimation
+  train_split: "train_inds.npy"
+  val_split: "val_inds.npy"
+
+model:
+  # placeholder for diffusion params
+  in_channels: 160
+  time_embed_dim: 128
+  num_steps: 1000
+
+train:
+  batch_size: 32
+  epochs: 100
+  lr: 1.0e-4
