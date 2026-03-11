@@ -24,7 +24,8 @@ class AdaLNModulation(nn.Module):
 
     def __init__(self, cond_dim: int, num_features: int):
         super().__init__()
-        self.norm = nn.GroupNorm(min(8, num_features), num_features, elementwise_affine=False)
+        # GroupNorm has no elementwise_affine; use default. AdaLN applies extra scale/shift on top.
+        self.norm = nn.GroupNorm(min(8, num_features), num_features)
         self.mlp = nn.Sequential(
             nn.SiLU(),
             nn.Linear(cond_dim, num_features * 2),
