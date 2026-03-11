@@ -736,12 +736,16 @@ def main():
     backend = getattr(args, 'dist_backend', None) or 'nccl'
     # Long timeout when warming cache so barrier after full warm does not trigger NCCL 10min default
     pg_timeout = timedelta(minutes=120) if getattr(args, 'warm_cache', False) else None
+    init_kw = {'backend': backend}
+    if pg_timeout is not None:
+        init_kw['timeout'] = pg_timeout
     try:
-        dist.init_process_group(backend=backend, timeout=pg_timeout)
+        dist.init_process_group(**init_kw)
     except RuntimeError as e:
         if 'NCCL' in str(e) and backend == 'nccl':
             backend = 'gloo'
-            dist.init_process_group(backend=backend, timeout=pg_timeout)
+            init_kw['backend'] = backend
+            dist.init_process_group(**init_kw)
         else:
             raise
     rank = dist.get_rank()

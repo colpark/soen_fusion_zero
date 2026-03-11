@@ -33,4 +33,5 @@ torchrun \
     --flattop-only \
     --use-instance-norm \
     --norm-stats "${NORM_STATS}" \
+    --clip 0.3 \
     "$@"
