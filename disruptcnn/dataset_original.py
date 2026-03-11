@@ -703,10 +703,14 @@ class PrebuiltOriginalSubseqDataset:
     seq_has_disrupt, get_split_indices('train'/'test'/'val'), pos_weight, neg_weight,
     _compute_class_weights (no-op; uses saved weights). All normalization is already
     applied in the saved data.
+
+    Optional decimate_factor > 1: take every decimate_factor-th time step (data and labels)
+    on-the-fly for 1/N-length sequences (e.g. 10 => ~7512 time steps from ~75125).
     """
 
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, decimate_factor: int = 1):
         self._root = Path(root)
+        self._decimate = max(1, int(decimate_factor))
         if not self._root.exists():
             raise FileNotFoundError(f"Prebuilt mmap dir not found: {self._root}")
         self._X = _load_ragged_mmap(self._root / "X")
@@ -735,6 +739,11 @@ class PrebuiltOriginalSubseqDataset:
         X = np.ascontiguousarray(self._X[index]).astype(np.float32)
         target = np.asarray(self._target[index], dtype=np.float32).copy()
         weight = np.asarray(self._weight[index], dtype=np.float32).copy()
+        if self._decimate > 1:
+            # Decimate on the time axis (last dim); X may be (C, T) or (20, 8, T).
+            X = X[..., ::self._decimate].copy()
+            target = target[::self._decimate].copy()
+            weight = weight[::self._decimate].copy()
         return (
             torch.from_numpy(X),
             torch.from_numpy(target),

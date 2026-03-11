@@ -781,7 +781,8 @@ def main():
             decimate = getattr(args, 'decimate_factor', 1) or 1
             ds_prebuilt = PrebuiltPerSplitSubseqDataset(args.prebuilt_mmap_dir, decimate_factor=decimate)
         else:
-            ds_prebuilt = PrebuiltOriginalSubseqDataset(args.prebuilt_mmap_dir)
+            decimate = getattr(args, 'decimate_factor', 1) or 1
+            ds_prebuilt = PrebuiltOriginalSubseqDataset(args.prebuilt_mmap_dir, decimate_factor=decimate)
         sample_X = ds_prebuilt[0][0]
         # X can be (C, T) or (20, 8, T); training uses view(B, -1, T) so channels = prod(shape[:-1])
         args.input_channels = int(np.prod(sample_X.shape[:-1]))
@@ -818,7 +819,8 @@ def main():
         ds = ds_prebuilt
         decimate = getattr(args, 'decimate_factor', 1) or 1
         if rank == 0:
-            log(rank, f'  Prebuilt mmap (per-split): {len(ds)} sequences (from {args.prebuilt_mmap_dir})'
+            layout = "per-split" if (prebuilt_path / "train" / "X").exists() else "original (flat)"
+            log(rank, f'  Prebuilt mmap ({layout}): {len(ds)} sequences (from {args.prebuilt_mmap_dir})'
                   + (f'  decimate_factor={decimate}' if decimate > 1 else ''))
     else:
         clear_file = args.clear_file
