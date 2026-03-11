@@ -21,6 +21,21 @@ From the **`wavestitch_ecei`** directory (so that `utils` and `TSImputers` resol
 # Train (default: subseqs_original_mmap, decimate 10)
 python train.py --prebuilt-mmap-dir ../subseqs_original_mmap --decimate-factor 10 --batch-size 16 --epochs 100
 
+# Train with verbose evaluation (config, model details, validation loss, sample paths)
+python train.py --prebuilt-mmap-dir ../subseqs_original_mmap --decimate-factor 10 --verbose
+
+# Samples are saved every 5 epochs by default to checkpoints_wavestitch_ecei/samples/
+# (clear and disrupt conditioning). Use --sample-every N or 0 to disable.
+```
+
+**Training options:**
+
+- `--verbose` — Print full config (JSON), dataset size, model parameter count, device; each epoch print validation loss (over up to 20 batches of test split); log checkpoint and sample paths.
+- `--log-every N` — Log loss every N batches (0 = epoch only).
+- `--sample-every N` — Generate and save sample visualizations every N epochs (default: 5; 0 = never). Saves `epochXXXX_clear.png` and `epochXXXX_disrupt.png` in `checkpoints_wavestitch_ecei/samples/`.
+- `--num-sample-viz N` — Number of samples per visualization (default: 4).
+
+```bash
 # Sample (after training)
 python sample.py --checkpoint checkpoints_wavestitch_ecei/ckpt_epoch_100.pt --num-samples 4 --class-id 1 --t-disrupt 0.5 --T 7512
 ```
@@ -31,7 +46,7 @@ python sample.py --checkpoint checkpoints_wavestitch_ecei/ckpt_epoch_100.pt --nu
 - **`utils/`** — WaveStitch `util.py` (only change: device-agnostic diffusion step embedding).
 - **`data/dataset.py`** — ECEi loader (same logic as `../diffusion/data/dataset.py`).
 - **`training_utils.py`** — MyDataset, fetchModel, fetchDiffusionConfig (no pandas).
-- **`train.py`** — Builds (B, 162, T) batches, conditional noising, same loss as WaveStitch.
+- **`train.py`** — Builds (B, T, 162) batches for WaveStitch, conditional noising, same loss as WaveStitch; optional verbose config/model/val loss; saves samples every 5 epochs.
 - **`sample.py`** — Reverse process with fixed condition channels.
 
 See **MODIFICATIONS.md** for what was changed relative to upstream WaveStitch.
