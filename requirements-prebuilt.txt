@@ -1,0 +1,2 @@
+# Optional deps for fast prebuilt subsequence I/O (preprocess_subseqs.py --format mmap, PrebuiltSubseqDataset)
+mmap_ninja

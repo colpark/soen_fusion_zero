@@ -16,8 +16,7 @@ class EceiDataset(data.Dataset):
                       Twarn=300,
                       test=0,test_indices=None,
                       label_balance='const',normalize=True,data_step=1,
-                      nsub=None,nrecept=None,
-                      snr_min_threshold=None):
+                      nsub=None,nrecept=None):
         """Initialize
         root: Directory root. Must have 'disrupt/' and 'clear/' as subdirectories
         clear_file, disrupt_file: File paths for disrupt/clear ECEi datasets.
@@ -40,8 +39,6 @@ class EceiDataset(data.Dataset):
         data_step: step to take in indexing the data
         nsub: Subsequence length to use
         nrecept: Receptive field length of model
-        snr_min_threshold: If set (e.g. 3.0), keep only shots with SNR min > this value, as in the paper (SNR>3).
-            None = no SNR filtering.
         """
         self.root = root
         self.train = train #training set or test set TODO: Do I need this?
@@ -57,13 +54,6 @@ class EceiDataset(data.Dataset):
         data_disrupt = np.loadtxt(disrupt_file,skiprows=1)
         data_clear = np.loadtxt(clear_file,skiprows=1)
         data_all = np.vstack((data_disrupt,data_clear))
-
-        # Paper: "A dataset of good ECEi data (SNR > 3) from 2,747 DIII-D shots ... was selected"
-        if snr_min_threshold is not None:
-            snr_min = data_all[:, 5].astype(float)
-            keep = snr_min > snr_min_threshold
-            if not np.all(keep):
-                data_all = data_all[keep]
 
         tflatstarts = data_all[:,-3]
         if (np.any(np.isnan(tflatstarts))) and flattop_only: #NaN's used when no flattop in shot

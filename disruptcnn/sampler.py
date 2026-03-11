@@ -89,13 +89,16 @@ class StratifiedSampler(DistributedSampler):
             pos_indices = self.pos_stratify[pos_indices]
             neg_indices = self.neg_stratify[neg_indices]
 
-            # interleave
-            nfact = math.ceil(len(neg_indices)/len(pos_indices))
+            # interleave (handle all-pos or all-neg to avoid nfact=0 and range(...,0))
+            if len(pos_indices) == 0:
+                return iter(neg_indices)
+            if len(neg_indices) == 0:
+                return iter(pos_indices)
+            nfact = max(1, math.ceil(len(neg_indices) / len(pos_indices)))
             indices = []
-            for i,j in enumerate(range(0,len(neg_indices),nfact)):
+            for i, j in enumerate(range(0, len(neg_indices), nfact)):
                 indices.append(pos_indices[i])
-                indices.extend(neg_indices[j:j+nfact])
-
+                indices.extend(neg_indices[j:j + nfact])
             return iter(indices)
         else:
             indices = torch.randperm(len(self.dataset), generator=g).tolist()

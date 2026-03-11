@@ -12,7 +12,13 @@ import argparse
 from disruptcnn.loader import data_generator, EceiDataset
 from disruptcnn.model import TCN
 import time
-from tensorboardX import SummaryWriter
+try:
+    from tensorboardX import SummaryWriter
+except ImportError:
+    class SummaryWriter:
+        def add_scalar(self, *args, **kwargs): pass
+        def add_text(self, *args, **kwargs): pass
+        def close(self): pass
 import os, psutil, shutil
 import matplotlib
 matplotlib.use('Agg')
@@ -90,8 +96,6 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'multi node data parallel training')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--checkpoint-dir', default='', type=str,
-                    help='directory to save checkpoints and logs (e.g. checkpoints_tcn_ddp_original/ablation_L1_H1_k5)')
 parser.add_argument('--data-step', default=1, type=int,
                     help='step to take in indexing the data')
 parser.add_argument('--test', default=0, type=int, metavar='N',
@@ -114,8 +118,14 @@ parser.add_argument('--clear-file', default=None, type=str,
                     help='path to clear shot list .txt. Overrides default if set.')
 parser.add_argument('--disrupt-file', default=None, type=str,
                     help='path to disrupt shot list .txt. Overrides default if set.')
-parser.add_argument('--use-instance-norm', action='store_true',
-                    help='use InstanceNorm1d in TCN instead of weight normalization (default: False)')
+parser.add_argument('--disrupt-only', action='store_true',
+                    help='use only disrupt shot list (no clear shots). Use with --use-original-dataloader when clear list is not in the original data.')
+parser.add_argument('--no-disrupt-only', action='store_true',
+                    help='use both disrupt and clear shot lists (cancel disrupt-only when using train_original).')
+parser.add_argument('--decimated-root', default=None, type=str,
+                    help='directory with decimated H5 files ({shot}.h5). Use this instead of data_root/disrupt/ when data is pre-decimated.')
+parser.add_argument('--norm-stats', default=None, type=str,
+                    help='path to normalization stats .npz (e.g. norm_stats.npz in project root). Expects mean_flat, std_flat (or mean_all, std_all).')
 
 
 root = '/scratch/gpfs/rmc2/ecei_d3d/'
@@ -131,9 +141,10 @@ def main():
     #assert (args.batch_size==1), "Currently need batch_size=1, due to variable length sequences"
     assert torch.cuda.is_available(), "GPU is currently required"
 
-    args.world_size = int(os.environ['SLURM_NTASKS'])
-    args.rank = int(os.environ['SLURM_PROCID'])
-    args.tstart = tstart
+    # Default to single process when not on SLURM
+    args.world_size = int(os.environ.get('SLURM_NTASKS', '1'))
+    args.rank = int(os.environ.get('SLURM_PROCID', '0'))
+    args.tstart = time.time()
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -159,13 +170,13 @@ def main():
         # main_worker process function
         mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node, args))
     else:
-        # Simply call main_worker function
-        #TODO Generalize for non-GPU? This requires GPU
-        args.gpu = int(os.environ['SLURM_LOCALID'])
+        # Simply call main_worker function (default GPU 0 when not on SLURM)
+        args.gpu = int(os.environ.get('SLURM_LOCALID', 0))
         main_worker(args.gpu, ngpus_per_node, args)
 
 def main_worker(gpu,ngpus_per_node,args):
     args.gpu = gpu
+    run_id = os.environ.get('SLURM_JOB_ID', 'local')  # for filenames; use 'local' when not on SLURM
 
     if args.gpu is not None:
         print("Use GPU: {} for training".format(args.gpu))
@@ -220,13 +231,14 @@ def main_worker(gpu,ngpus_per_node,args):
 
     if (args.test>0) and (args.test < args.batch_size): args.batch_size = args.test
 
-    # Data path overrides
     use_data_root = args.data_root if args.data_root else data_root
     use_clear_file = args.clear_file if args.clear_file else clear_file
     use_disrupt_file = args.disrupt_file if args.disrupt_file else disrupt_file
 
     print(args)
     if getattr(args, 'use_original_dataloader', False):
+        if getattr(args, 'disrupt_only', False) and not getattr(args, 'no_disrupt_only', False):
+            use_clear_file = None  # disrupt-only when no clear shots
         from disruptcnn.dataset_original import EceiDatasetOriginal, data_generator_original
         dataset = EceiDatasetOriginal(use_data_root, use_clear_file, use_disrupt_file,
                           test=args.test, test_indices=args.test_indices,
@@ -234,7 +246,9 @@ def main_worker(gpu,ngpus_per_node,args):
                           normalize=(not args.no_normalize),
                           data_step=args.data_step,
                           nsub=args.nsub, nrecept=args.nrecept,
-                          flattop_only=args.flattop_only)
+                          flattop_only=args.flattop_only,
+                          decimated_root=getattr(args, 'decimated_root', None),
+                          norm_stats_path=getattr(args, 'norm_stats', None))
         dataset.train_val_test_split()
         train_loader, val_loader, test_loader = data_generator_original(dataset, args.batch_size,
                                                             distributed=args.distributed,
@@ -248,18 +262,17 @@ def main_worker(gpu,ngpus_per_node,args):
                           data_step=args.data_step,
                           nsub=args.nsub,nrecept=args.nrecept,
                           flattop_only=args.flattop_only)
-        #create the indices for train/val/test split
         dataset.train_val_test_split()
-        #create data loaders
-        train_loader, val_loader, test_loader = data_generator(dataset, args.batch_size, 
+        train_loader, val_loader, test_loader = data_generator(dataset, args.batch_size,
                                                             distributed=args.distributed,
                                                             num_workers=args.workers,
                                                             undersample=args.undersample)
 
     #set defaults for iterations_warmup (5 epochs) and iterations_valid (1 epoch)
     #TODO Add separate argsparse for epochs_warmup and epochs_valid?
-    if args.iterations_warmup is None: args.iterations_warmup = 5*len(train_loader)
-    if args.iterations_valid is None: args.iterations_valid = len(train_loader)
+    n_train = len(train_loader)
+    if args.iterations_warmup is None: args.iterations_warmup = max(1, 5 * n_train)
+    if args.iterations_valid is None: args.iterations_valid = max(1, n_train)
     if args.log_interval is None: 
         if args.test==0:
             args.log_interval = args.iterations_valid
@@ -318,7 +331,14 @@ def main_worker(gpu,ngpus_per_node,args):
             
             #NOTE: to reuse the train_inds, etc. as defined by the splits file, the undersample has to
             #      be turned off here
-            train_loader, val_loader, test_loader = data_generator(dataset, args.batch_size, 
+            if getattr(args, 'use_original_dataloader', False):
+                from disruptcnn.dataset_original import data_generator_original
+                train_loader, val_loader, test_loader = data_generator_original(dataset, args.batch_size,
+                                                        distributed=args.distributed,
+                                                        num_workers=args.workers,
+                                                        undersample=None)
+            else:
+                train_loader, val_loader, test_loader = data_generator(dataset, args.batch_size, 
                                                         distributed=args.distributed,
                                                         num_workers=args.workers,
                                                         undersample=None)
@@ -330,18 +350,21 @@ def main_worker(gpu,ngpus_per_node,args):
 
     #save the train/val/test split, for further post-processing
     if args.rank==0:
-        np.savez('splits.'+os.environ['SLURM_JOB_ID']+'.npz',
+        def _sampler_indices(loader, name):
+            s = getattr(loader, 'sampler', None)
+            if s is None:
+                return np.array([], dtype=np.int64)
+            return getattr(s, name, np.array([], dtype=np.int64))
+        np.savez('splits.'+run_id+'.npz',
                     shot=dataset.shot,shot_idxi=dataset.shot_idxi,start_idxi=dataset.start_idxi,stop_idxi=dataset.stop_idxi,
                     disrupted=dataset.disrupted,disruptedi=dataset.disruptedi,
                     train_inds = dataset.train_inds,val_inds = dataset.val_inds, test_inds=dataset.test_inds,
-                    train_pos_used_indices=train_loader.sampler.pos_used_indices,
-                    train_neg_used_indices=train_loader.sampler.neg_used_indices,
-                    val_pos_used_indices=val_loader.sampler.pos_used_indices,
-                    val_neg_used_indices=val_loader.sampler.neg_used_indices,
-                    test_pos_used_indices=test_loader.sampler.pos_used_indices,
-                    test_neg_used_indices=test_loader.sampler.neg_used_indices,
-                    test_pos_used_indices=dataset.test_inds[dataset.disruptedi[dataset.test_inds]==1],
-                    test_neg_used_indices=dataset.test_inds[dataset.disruptedi[dataset.test_inds]==0])
+                    train_pos_used_indices=_sampler_indices(train_loader, 'pos_used_indices'),
+                    train_neg_used_indices=_sampler_indices(train_loader, 'neg_used_indices'),
+                    val_pos_used_indices=_sampler_indices(val_loader, 'pos_used_indices'),
+                    val_neg_used_indices=_sampler_indices(val_loader, 'neg_used_indices'),
+                    test_pos_used_indices=_sampler_indices(test_loader, 'pos_used_indices'),
+                    test_neg_used_indices=_sampler_indices(test_loader, 'neg_used_indices'))
 
 
     #this autotunes algo on GPU. If variable input (like before with single shot), would
@@ -354,7 +377,8 @@ def main_worker(gpu,ngpus_per_node,args):
     total_loss = 0
     best_acc = 0
     for epoch in range(args.start_epoch, args.epochs):
-        train_loader.sampler.set_epoch(epoch)
+        if hasattr(train_loader.sampler, 'set_epoch'):
+            train_loader.sampler.set_epoch(epoch)
         for batch_idx, (data, target, global_index, weight) in enumerate(train_loader):
             model.train()
             iteration = epoch*len(train_loader) + batch_idx
@@ -367,7 +391,7 @@ def main_worker(gpu,ngpus_per_node,args):
                     lr_epoch = [ group['lr'] for group in optimizer.param_groups ][0]
                     lr_history["lr"].append(lr_epoch)
                     lr_history["loss"].append(total_loss)
-                    np.savez('lr_finder_'+str(int(os.environ['SLURM_JOB_ID']))+'.npz',lr=lr_history["lr"],loss=lr_history["loss"])
+                    np.savez('lr_finder_'+run_id+'.npz',lr=lr_history["lr"],loss=lr_history["loss"])
                     total_loss = 0
             else:
                 if iteration < args.iterations_warmup:
@@ -415,8 +439,6 @@ def main_worker(gpu,ngpus_per_node,args):
                  
                 if (not args.multiprocessing_distributed and args.rank==0) or \
                    (args.multiprocessing_distributed and args.rank % ngpus_per_node == 0):
-                    ckpt_name = 'checkpoint.'+os.environ.get('SLURM_JOB_ID', '0')+'.pth.tar'
-                    ckpt_path = os.path.join(args.checkpoint_dir, ckpt_name) if args.checkpoint_dir else ckpt_name
                     save_checkpoint({
                         'epoch': epoch + 1,
                         'state_dict': model.state_dict(),
@@ -426,7 +448,7 @@ def main_worker(gpu,ngpus_per_node,args):
                         'confusion_matrix': {'TP':TP, 'TN':TN, 'FP':FP, 'FN':FN},
                         'f1': valid_f1,
                         'threshold': threshold,
-                    }, is_best, filename=ckpt_path, checkpoint_dir=args.checkpoint_dir)
+                    }, is_best,filename='checkpoint.'+run_id+'.pth.tar')
             
 
     print("Main training loop ended")
@@ -443,7 +465,7 @@ def main_worker(gpu,ngpus_per_node,args):
 
                 for (i,gi) in enumerate(global_index):
                     plot_output(data[i,...][np.newaxis,...],output[i,...][np.newaxis,...],target[i,...][np.newaxis,...],weight[i,...][np.newaxis,...],args,
-                           filename='test_output_'+str(int(os.environ['SLURM_JOB_ID']))+'_ind_'+str(global_index.item())+'.png',
+                           filename='test_output_'+run_id+'_ind_'+str(global_index.item())+'.png',
                            title='Loss: %0.4e' % loss)
 
     if args.lr_finder:
@@ -452,8 +474,8 @@ def main_worker(gpu,ngpus_per_node,args):
         plt.xscale('log')
         plt.yscale('log')
         #plt.ylim([np.array(lr_history["loss"]).min(),lr_history["loss"][0]])
-        plt.savefig('lr_finder_'+str(int(os.environ['SLURM_JOB_ID']))+'.png')
-        np.savez('lr_finder_'+str(int(os.environ['SLURM_JOB_ID']))+'.npz',lr=lr_history["lr"],loss=lr_history["loss"])
+        plt.savefig('lr_finder_'+run_id+'.png')
+        np.savez('lr_finder_'+run_id+'.npz',lr=lr_history["lr"],loss=lr_history["loss"])
 
     if is_writer: writer.close()
     time.sleep(180) #allow all processes to finish
@@ -537,7 +559,7 @@ def evaluate(val_loader,model,args):
                 for (i,gi) in enumerate(global_index):
                     if ((val_loader.dataset.dataset.disruptedi[gi]==1)):
                         plot_output(data,output,target,weight,args,
-                                filename='output_'+str(int(os.environ['SLURM_JOB_ID']))+'_iteration_'+str(args.iteration)+'_ind_'+str(int(gi))+'.png',
+                                filename='output_'+run_id+'_iteration_'+str(args.iteration)+'_ind_'+str(int(gi))+'.png',
                                 title='Loss: %0.4e' % float(loss))
 
         total_loss /= len(val_loader)
@@ -595,12 +617,11 @@ def f1_score(TP,TP_FP,TP_FN,eps=1e-10):
     recall = TP/TP_FN+eps
     return 2./(1./precision + 1./recall)
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar', checkpoint_dir=''):
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
     if is_best:
-        best_name = 'model_best.'+str(int(os.environ.get('SLURM_JOB_ID', 0)))+'.pth.tar'
-        best_path = os.path.join(checkpoint_dir, best_name) if checkpoint_dir else best_name
-        shutil.copyfile(filename, best_path)
+        run_id = os.environ.get('SLURM_JOB_ID', 'local')
+        shutil.copyfile(filename, 'model_best.'+run_id+'.pth.tar')
 
 
 def create_model(args):
@@ -616,17 +637,10 @@ def create_model(args):
     #reset args.nrecept with the actual receptive field
     args.nrecept = calc_seq_length(args.kernel_size,dilation_sizes,args.levels)
 
-    if getattr(args, 'use_instance_norm', False):
-        from .model_instancenorm import TCN as TCNInstanceNorm
-        model = TCNInstanceNorm(args.input_channels, args.n_classes, channel_sizes,
-                                kernel_size=args.kernel_size,
-                                dropout=args.dropout,
-                                dilation_size=dilation_sizes)
-    else:
-        model = TCN(args.input_channels, args.n_classes, channel_sizes,
-                    kernel_size=args.kernel_size,
-                    dropout=args.dropout,
-                    dilation_size=dilation_sizes)
+    model = TCN(args.input_channels, args.n_classes, channel_sizes, 
+                kernel_size=args.kernel_size, 
+                dropout=args.dropout,
+                dilation_size=dilation_sizes)
     return model
 
 def calc_seq_length(kernel_size,dilation_sizes,nlevel):

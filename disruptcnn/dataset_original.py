@@ -8,7 +8,7 @@ This module implements the original recipe only:
 - Twarn = 300 ms: label as disruptive from sample index disrupt_idx = ceil((tdisrupt - Twarn - tstart) / dt) to end of segment.
 - All indices are in "sample space" (tstart = 0 at index 0, dt per sample).
 
-Four areas aligned with soenre/disruptcnn/loader.EceiDataset: (1) Clear file required, data_all = vstack(disrupt, clear); (2) shots2seqs same formulas and window loop, no file-length skip/tail; (3) _read_data exact slice, no clamping; (4) calc_label_weights over sequence indices with safe division.
+Segment/tiling/read/weights match original: (1) clear_file optional; when provided, data_all = vstack(disrupt, clear), else disrupt-only. (2) shots2seqs same formulas, no file-length skip/tail. (3) _read_data exact slice, no clamping. (4) calc_label_weights over sequence indices with safe division.
 
 Use this dataloader for training that exactly matches the original DisruptCNN setting.
 """
@@ -16,6 +16,7 @@ Use this dataloader for training that exactly matches the original DisruptCNN se
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
@@ -98,34 +99,142 @@ def segment_info_for_comparison(
             "segment_length_samples": n_samp,
             "segment_length_ms": n_samp * dt[i],
             "has_flattop": bool(has_flattop[i]),
+            "zero_idx": int(np.ceil((0.0 - tstart[i]) / dt[i])),
         })
+    return out
+
+
+def subsequences_original_tiling(
+    segment: dict,
+    nsub: int = 78125,
+    nrecept: int = 30000,
+    data_step: int = 1,
+) -> List[dict]:
+    """
+    Given one shot's segment info (from segment_info_for_comparison), return the list of
+    subsequences produced by dataset_original's shots2seqs tiling (overlap = nsub - nrecept + 1).
+
+    No H5 or full dataset required. Used to compare "how a shot is turned into subsequences"
+    in the original DisruptCNN (dataset_original) pipeline.
+
+    Returns list of dicts: seq_idx, start, stop, length, has_disrupt, disrupt_local (offset in window or -1).
+    """
+    start_idx = segment["start_idx"]
+    stop_idx = segment["stop_idx"]
+    disrupt_idx = segment["disrupt_idx"]
+    zero_idx = segment.get("zero_idx")
+    if zero_idx is None:
+        tstart = segment["tstart"]
+        dt = segment["dt"]
+        zero_idx = int(np.ceil((0.0 - tstart) / dt))
+
+    N = max(0, int((stop_idx - start_idx + 1) / data_step))
+    num_seq_frac = (N - nsub) / float(nsub - nrecept + 1) + 1
+    num_seq = max(1, int(np.ceil(num_seq_frac)))
+    Nseq = nsub + (num_seq - 1) * (nsub - nrecept + 1)
+    if (start_idx > zero_idx) and ((start_idx - zero_idx + 1) > (Nseq - N) * data_step):
+        start_idx = start_idx - (Nseq - N) * data_step
+    else:
+        num_seq = max(1, num_seq - 1)
+        Nseq = nsub + (num_seq - 1) * (nsub - nrecept + 1)
+        start_idx = start_idx + (N - Nseq) * data_step
+
+    out = []
+    for m in range(num_seq):
+        start = start_idx + (m * nsub - m * nrecept + m) * data_step
+        stop = start_idx + ((m + 1) * nsub - m * nrecept + m) * data_step
+        if start <= disrupt_idx <= stop:
+            has_disrupt = True
+            disrupt_local = disrupt_idx - start
+        else:
+            has_disrupt = False
+            disrupt_local = -1
+        out.append({
+            "seq_idx": m,
+            "start": start,
+            "stop": stop,
+            "length": stop - start,
+            "has_disrupt": has_disrupt,
+            "disrupt_local": disrupt_local,
+        })
+    return out
+
+
+def subsequences_past_tiling(
+    start_idx: int,
+    stop_idx: int,
+    disrupt_idx: int,
+    nsub: int,
+    stride: int,
+    stop_at_last_window_containing_disrupt: bool = True,
+    t_dis_samples: Optional[int] = None,
+) -> List[dict]:
+    """
+    Tile a segment into subsequences the "past" way (ECEiTCNDataset-style): fixed stride,
+    windows [pos, min(pos+nsub, b)], optional cap so last window still contains t_disrupt.
+
+    t_dis_samples: absolute sample index of disruption (disrupt_idx + Twarn). If None, not used for pos_limit.
+    Returns list of dicts: seq_idx, start, stop, length, has_disrupt, disrupt_local.
+    """
+    a, b = start_idx, stop_idx
+    d = disrupt_idx
+    if b - a < 1:
+        return []
+    pos_limit = b
+    if stop_at_last_window_containing_disrupt and d <= b and t_dis_samples is not None:
+        pos_limit = min(b, t_dis_samples + 1)
+    out = []
+    pos = a
+    seq_idx = 0
+    while pos < pos_limit:
+        stop = min(pos + nsub, b)
+        if d <= pos:
+            has_disrupt = True
+            disrupt_local = 0
+        elif d >= stop:
+            has_disrupt = False
+            disrupt_local = -1
+        else:
+            has_disrupt = True
+            disrupt_local = d - pos
+        out.append({
+            "seq_idx": seq_idx,
+            "start": pos,
+            "stop": stop,
+            "length": stop - pos,
+            "has_disrupt": has_disrupt,
+            "disrupt_local": disrupt_local,
+        })
+        pos += stride
+        seq_idx += 1
     return out
 
 
 def _parse_shot_lists(
     disrupt_file: str,
-    clear_file: str,
+    clear_file: Optional[str],
     flattop_only: bool,
     snr_min_threshold: Optional[float],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple:
     """
-    Parse disrupt and clear shot list files and compute per-shot segment indices.
-    clear_file is required; original behavior uses data_all = vstack(disrupt, clear).
+    Parse disrupt (and optionally clear) shot list files and compute per-shot segment indices.
+    If clear_file is provided and exists, data_all = vstack(disrupt, clear). Else disrupt-only.
 
     Returns:
-        shot: (N,) shot numbers
-        start_idx: (N,) first sample index of segment (inclusive)
-        stop_idx: (N,) last sample index of segment (inclusive)
-        disrupt_idx: (N,) sample index where label becomes 1 (tdisrupt - Twarn); -1000 if not disrupted
-        disrupted: (N,) bool, True if shot is disrupted
-        dt: (N,) timestep in ms (for reference)
-        zero_idx: (N,) sample index corresponding to t=0 (for compatibility)
+        shot, start_idx, stop_idx, disrupt_idx, disrupted, dt, zero_idx
     """
-    if not clear_file or not disrupt_file:
-        raise ValueError("clear_file and disrupt_file are required.")
+    if not disrupt_file or not str(disrupt_file).strip():
+        raise ValueError("disrupt_file is required.")
     data_disrupt = np.loadtxt(disrupt_file, skiprows=1)
-    data_clear = np.loadtxt(clear_file, skiprows=1)
-    data_all = np.vstack((data_disrupt, data_clear))
+    if data_disrupt.ndim == 1:
+        data_disrupt = data_disrupt[np.newaxis, :]
+    if clear_file and str(clear_file).strip() and Path(clear_file).exists():
+        data_clear = np.loadtxt(clear_file, skiprows=1)
+        if data_clear.ndim == 1:
+            data_clear = data_clear[np.newaxis, :]
+        data_all = np.vstack((data_disrupt, data_clear))
+    else:
+        data_all = data_disrupt
 
     if snr_min_threshold is not None:
         snr_min = data_all[:, COL_SNR_MIN].astype(float)
@@ -145,7 +254,6 @@ def _parse_shot_lists(
 
     Twarn = 300.0  # ms
 
-    # Disrupt index: first sample labeled as disruptive = ceil((tdisrupt - Twarn - tstart) / dt)
     disrupt_idx = np.ceil((tdisrupt - Twarn - tstarts) / dt).astype(int)
     disrupt_idx[tdisrupt < 0] = -1000
     disrupted = disrupt_idx > 0
@@ -179,44 +287,35 @@ class EceiDatasetOriginal(data.Dataset):
     def __init__(
         self,
         root: str,
-        clear_file: str,
+        clear_file: Optional[str],
         disrupt_file: str,
         train: bool = True,
         flattop_only: bool = True,
         Twarn: int = 300,
         test: int = 0,
-        test_indices: Optional[list[int]] = None,
+        test_indices: Optional[List[int]] = None,
         label_balance: str = "const",
         normalize: bool = True,
         data_step: int = 1,
         nsub: Optional[int] = None,
         nrecept: Optional[int] = None,
         snr_min_threshold: Optional[float] = None,
+        decimated_root: Optional[str] = None,
+        clear_decimated_root: Optional[str] = None,
+        norm_stats_path: Optional[str] = None,
     ):
-        """
-        root: Data root with 'disrupt/', 'clear/', and normalization.npz.
-        clear_file, disrupt_file: Paths to shot list .txt (tab/space separated, header row).
-            clear_file is required (original behavior: data_all = vstack(disrupt, clear)).
-        flattop_only: If True, use only flattop window and drop shots with NaN t_flat_start.
-        Twarn: Time (ms) before tdisrupt at which to start labeling as disruptive (default 300).
-        test, test_indices: Overfit test setup (subset of data).
-        label_balance: 'const' for class weights, else no weighting.
-        data_step: Step in sample index when reading (1 = every sample).
-        nsub, nrecept: Subsequence length and receptive field for sliding windows.
-        snr_min_threshold: If set (e.g. 3.0), keep only shots with SNR min > threshold.
-        """
         self.root = root
+        self._decimated_root = Path(decimated_root) if decimated_root and str(decimated_root).strip() else None
+        self._clear_decimated_root = Path(clear_decimated_root) if clear_decimated_root and str(clear_decimated_root).strip() else None
+        self._norm_stats_path = norm_stats_path
         self.train = train
         self.Twarn = Twarn
         self.test = test
         self.label_balance = label_balance
         self.normalize = normalize
         self.data_step = data_step
-        self.nsub = nsub if nsub is not None else 78125
-        self.nrecept = nrecept if nrecept is not None else 30000
-
-        if not clear_file or not disrupt_file:
-            raise ValueError("clear_file and disrupt_file are required for original DisruptCNN behavior.")
+        _nsub = nsub if nsub is not None else 78125
+        _nrecept = nrecept if nrecept is not None else 30000
 
         (
             self.shot,
@@ -228,22 +327,81 @@ class EceiDatasetOriginal(data.Dataset):
             self.zero_idx,
         ) = _parse_shot_lists(disrupt_file, clear_file, flattop_only, snr_min_threshold)
 
+        # Keep only shots whose H5 file actually exists (not all shot list entries may be available)
+        available = np.array([
+            self._path_for_shot(self.shot[i], self.disrupted[i]).exists()
+            for i in range(len(self.shot))
+        ], dtype=bool)
+        if not np.all(available):
+            n_dropped = int((~available).sum())
+            self.shot = self.shot[available]
+            self.start_idx = self.start_idx[available]
+            self.stop_idx = self.stop_idx[available]
+            self.disrupt_idx = self.disrupt_idx[available]
+            self.disrupted = self.disrupted[available]
+            self.zero_idx = self.zero_idx[available]
+            print(f"[EceiDatasetOriginal] Using only shots with available H5: {len(self.shot)} kept, {n_dropped} dropped (no file).")
+        if len(self.shot) == 0:
+            raise FileNotFoundError("No H5 files found for any shot in the list. Check data_root/decimated_root and shot list.")
+
         self.length = len(self.shot)
 
-        # Offsets placeholder (filled on first read per shot)
+        # When using decimated H5, indices and window sizes are in raw (1 MHz) space; convert to decimated
+        if self._decimated_root is not None:
+            self.start_idx = (self.start_idx // self.data_step).astype(np.int64)
+            self.stop_idx = (self.stop_idx // self.data_step).astype(np.int64)
+            nondisrupt = self.disrupt_idx < 0  # -1000 for clear
+            self.disrupt_idx = (self.disrupt_idx // self.data_step).astype(np.int64)
+            self.disrupt_idx[nondisrupt] = -1000
+            self.zero_idx = (self.zero_idx // self.data_step).astype(np.int64)
+            self._step_in_getitem = 1
+            self.nsub = max(1, _nsub // self.data_step)
+            self.nrecept = max(1, _nrecept // self.data_step)
+        else:
+            self._step_in_getitem = self.data_step
+            self.nsub = _nsub
+            self.nrecept = _nrecept
+
         filename = self._filename(0)
         with h5py.File(filename, "r") as f:
-            self.offsets = np.zeros(f["offsets"].shape + (self.shot.size,), dtype=f["offsets"].dtype)
+            if "offsets" in f:
+                self.offsets = np.zeros(f["offsets"].shape + (self.shot.size,), dtype=f["offsets"].dtype)
+            else:
+                # Decimated data often has offset already removed; use zeros
+                LFS = f["LFS"]
+                base = np.zeros((LFS.shape[0], LFS.shape[1], self.shot.size), dtype=np.float64)
+                self.offsets = base
 
-        # Normalization
-        norm_path = os.path.join(self.root, "normalization.npz")
-        f = np.load(norm_path)
-        if flattop_only:
-            self.normalize_mean = f["mean_flat"]
-            self.normalize_std = f["std_flat"]
+        if self._norm_stats_path and os.path.isfile(self._norm_stats_path):
+            norm_path = self._norm_stats_path
         else:
-            self.normalize_mean = f["mean_all"]
-            self.normalize_std = f["std_all"]
+            norm_path = None
+            idies_shared = "/home/idies/workspace/Storage/yhuang2/persistent/ecei/norm_stats.npz"
+            for candidate in [
+                self._norm_stats_path,
+                os.path.join(self.root, "normalization.npz"),
+                os.path.join(self.root, "norm_stats.npz"),
+                str(self._decimated_root / "normalization.npz") if self._decimated_root else None,
+                str(self._decimated_root / "norm_stats.npz") if self._decimated_root else None,
+                idies_shared,
+            ]:
+                if candidate and os.path.isfile(candidate):
+                    norm_path = candidate
+                    break
+        if norm_path is None:
+            raise FileNotFoundError(
+                "Normalization stats not found. Set norm_stats_path or place normalization.npz or norm_stats.npz in root/decimated_root."
+            )
+        f = np.load(norm_path)
+        # Accept DisruptCNN keys (mean_flat, std_flat, mean_all, std_all) or fallback to mean/std
+        def _get(key: str, fallback: str):
+            return f[key] if key in f.files else f[fallback]
+        if flattop_only:
+            self.normalize_mean = _get("mean_flat", "mean")
+            self.normalize_std = _get("std_flat", "std")
+        else:
+            self.normalize_mean = _get("mean_all", "mean")
+            self.normalize_std = _get("std_all", "std")
         f.close()
 
         self.shots2seqs()
@@ -265,41 +423,52 @@ class EceiDatasetOriginal(data.Dataset):
                     self.test_indices = np.array(test_indices)
             self.length = len(self.test_indices)
 
+    def _path_for_shot(self, shot: int, is_disrupt: bool) -> Path:
+        """Path to H5 for a given shot (for existence check)."""
+        if self._decimated_root is not None:
+            if not is_disrupt and self._clear_decimated_root is not None:
+                return self._clear_decimated_root / f"{shot}.h5"
+            return self._decimated_root / f"{shot}.h5"
+        folder = "disrupt" if is_disrupt else "clear"
+        return Path(self.root) / folder / f"{shot}.h5"
+
     def _filename(self, shot_index: int) -> str:
         shot = self.shot[shot_index]
-        folder = "disrupt" if self.disrupted[shot_index] else "clear"
-        return os.path.join(self.root, folder, f"{shot}.h5")
+        return str(self._path_for_shot(shot, self.disrupted[shot_index]))
 
     def shots2seqs(self) -> None:
-        """Build per-subsequence indices: shot_idxi, start_idxi, stop_idxi, disrupt_idxi, disruptedi."""
+        """Build per-subsequence indices; same formulas as original loader (no file-length skip/tail)."""
         self.shot_idxi = []
         self.start_idxi = []
         self.stop_idxi = []
         self.disrupt_idxi = []
+        step = self._step_in_getitem
         for s in range(len(self.shot)):
-            N = int((self.stop_idx[s] - self.start_idx[s] + 1) / self.data_step)
+            N = int((self.stop_idx[s] - self.start_idx[s] + 1) / step)
             num_seq_frac = (N - self.nsub) / float(self.nsub - self.nrecept + 1) + 1
             num_seq = np.ceil(num_seq_frac).astype(int)
             if num_seq < 1:
                 num_seq = 1
             Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
             if (self.start_idx[s] > self.zero_idx[s]) and (
-                (self.start_idx[s] - self.zero_idx[s] + 1) > (Nseq - N) * self.data_step
+                (self.start_idx[s] - self.zero_idx[s] + 1) > (Nseq - N) * step
             ):
-                self.start_idx[s] -= (Nseq - N) * self.data_step
+                self.start_idx[s] -= (Nseq - N) * step
             else:
                 num_seq -= 1
                 Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
-                self.start_idx[s] += (N - Nseq) * self.data_step
+                self.start_idx[s] += (N - Nseq) * step
             for m in range(num_seq):
+                start_i = int(
+                    self.start_idx[s] + (m * self.nsub - m * self.nrecept + m) * step
+                )
+                stop_i = int(
+                    self.start_idx[s] + ((m + 1) * self.nsub - m * self.nrecept + m) * step
+                )
                 self.shot_idxi.append(s)
-                self.start_idxi.append(
-                    self.start_idx[s] + (m * self.nsub - m * self.nrecept + m) * self.data_step
-                )
-                self.stop_idxi.append(
-                    self.start_idx[s] + ((m + 1) * self.nsub - m * self.nrecept + m) * self.data_step
-                )
-                if self.start_idxi[-1] <= self.disrupt_idx[s] <= self.stop_idxi[-1]:
+                self.start_idxi.append(start_i)
+                self.stop_idxi.append(stop_i)
+                if start_i <= self.disrupt_idx[s] <= stop_i:
                     self.disrupt_idxi.append(self.disrupt_idx[s])
                 else:
                     self.disrupt_idxi.append(-1000)
@@ -328,7 +497,7 @@ class EceiDatasetOriginal(data.Dataset):
 
     def train_val_test_split(
         self,
-        sizes: tuple[float, float, float] = (0.8, 0.1, 0.1),
+        sizes: tuple = (0.8, 0.1, 0.1),
         random_seed: int = 42,
         train_inds: Optional[np.ndarray] = None,
         val_inds: Optional[np.ndarray] = None,
@@ -362,14 +531,14 @@ class EceiDatasetOriginal(data.Dataset):
         self.calc_label_weights(inds=self.train_inds)
 
     def _read_data(self, index: int) -> np.ndarray:
-        """Read LFS slice [start_idxi:stop_idxi] with step data_step; no clamping (matches original)."""
+        """Read LFS slice [start_idxi:stop_idxi] with step; no clamping (matches original)."""
         shot_index = self.shot_idxi[index]
         filename = self._filename(shot_index)
         with h5py.File(filename, "r") as f:
-            if np.all(self.offsets[..., shot_index] == 0):
+            if np.all(self.offsets[..., shot_index] == 0) and "offsets" in f:
                 self.offsets[..., shot_index] = f["offsets"][...]
             X = (
-                f["LFS"][..., self.start_idxi[index] : self.stop_idxi[index]][..., :: self.data_step]
+                f["LFS"][..., self.start_idxi[index] : self.stop_idxi[index]][..., :: self._step_in_getitem]
                 - self.offsets[..., shot_index][..., np.newaxis]
             )
         if self.normalize:
@@ -379,9 +548,8 @@ class EceiDatasetOriginal(data.Dataset):
     def __len__(self) -> int:
         return self.length
 
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, int, torch.Tensor]:
+    def __getitem__(self, index: int) -> tuple:
         if self.test > 0 and hasattr(self, "test_indices"):
-            # Map index to stored test index
             idx = self.test_indices[index]
         else:
             idx = index
@@ -389,7 +557,7 @@ class EceiDatasetOriginal(data.Dataset):
         target = np.zeros((X.shape[-1],), dtype=X.dtype)
         weight = self.neg_weight * np.ones((X.shape[-1],), dtype=X.dtype)
         if self.disruptedi[idx]:
-            first_disrupt = int((self.disrupt_idxi[idx] - self.start_idxi[idx] + 1) / self.data_step)
+            first_disrupt = int((self.disrupt_idxi[idx] - self.start_idxi[idx] + 1) / self._step_in_getitem)
             target[first_disrupt:] = 1
             weight[first_disrupt:] = self.pos_weight
         return (
@@ -409,7 +577,6 @@ def data_generator_original(
     rank: Optional[int] = None,
     undersample: Optional[float] = None,
 ):
-    """Build train/val/test DataLoaders for EceiDatasetOriginal (same API as loader.data_generator)."""
     if not hasattr(dataset, "train_inds"):
         dataset.train_val_test_split()
     train_dataset = data.Subset(dataset, dataset.train_inds)
@@ -444,3 +611,257 @@ def data_generator_original(
         test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, drop_last=True
     )
     return train_loader, val_loader, test_loader
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Wrapper for train_tcn_ddp: fixed-length (X, target, weight) + split API
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class OriginalStyleDatasetForDDP:
+    """Wraps EceiDatasetOriginal so it matches the interface expected by train_tcn_ddp.
+
+    - __getitem__(i) returns (X, target, weight) with X padded/cropped to fixed T = nsub.
+    - seq_has_disrupt, get_split_indices('train'/'test'/'val'), pos_weight, neg_weight,
+      _compute_class_weights(indices) for stratified sampling and class weights.
+    """
+
+    def __init__(self, inner: EceiDatasetOriginal):
+        self._inner = inner
+        if not hasattr(inner, "train_inds"):
+            inner.train_val_test_split()
+        self._T_fixed = int(inner.nsub)
+
+    def __len__(self) -> int:
+        return len(self._inner)
+
+    def __getitem__(self, index: int):
+        X, target, _idx, weight = self._inner[index]
+        X = X.cpu().numpy() if isinstance(X, torch.Tensor) else np.asarray(X)
+        target = target.cpu().numpy() if isinstance(target, torch.Tensor) else np.asarray(target)
+        weight = weight.cpu().numpy() if isinstance(weight, torch.Tensor) else np.asarray(weight)
+        T = X.shape[-1]
+        if T >= self._T_fixed:
+            X = X[..., : self._T_fixed].copy()
+            target = target[: self._T_fixed].copy()
+            weight = weight[: self._T_fixed].copy()
+        else:
+            pad = self._T_fixed - T
+            X = np.concatenate([X, np.zeros((*X.shape[:-1], pad), dtype=X.dtype)], axis=-1)
+            target = np.concatenate([target, np.zeros(pad, dtype=target.dtype)])
+            weight = np.concatenate([weight, np.zeros(pad, dtype=weight.dtype)])
+        return (
+            torch.from_numpy(X).float(),
+            torch.from_numpy(target).float(),
+            torch.from_numpy(weight).float(),
+        )
+
+    @property
+    def seq_has_disrupt(self) -> np.ndarray:
+        return self._inner.disruptedi
+
+    def get_split_indices(self, split: str) -> np.ndarray:
+        if split == "train":
+            return self._inner.train_inds
+        if split == "test":
+            return self._inner.test_inds
+        if split == "val":
+            return self._inner.val_inds
+        raise ValueError(f"Unknown split: {split}")
+
+    @property
+    def pos_weight(self) -> float:
+        return self._inner.pos_weight
+
+    @property
+    def neg_weight(self) -> float:
+        return self._inner.neg_weight
+
+    def _compute_class_weights(self, indices: Optional[np.ndarray] = None):
+        self._inner.calc_label_weights(inds=indices)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Prebuilt mmap dataset — load from preprocessing_mmap.ipynb output
+# ═══════════════════════════════════════════════════════════════════════
+
+def _load_ragged_mmap(path):
+    try:
+        from mmap_ninja import RaggedMmap
+        return RaggedMmap(str(path))
+    except ImportError as e:
+        raise ImportError(
+            "PrebuiltOriginalSubseqDataset requires mmap_ninja. Install with: pip install mmap_ninja"
+        ) from e
+
+
+class PrebuiltOriginalSubseqDataset:
+    """
+    Dataset that loads pre-saved subsequences from preprocessing_mmap.ipynb output.
+
+    Same interface as OriginalStyleDatasetForDDP: __getitem__(i) returns (X, target, weight),
+    seq_has_disrupt, get_split_indices('train'/'test'/'val'), pos_weight, neg_weight,
+    _compute_class_weights (no-op; uses saved weights). All normalization is already
+    applied in the saved data.
+    """
+
+    def __init__(self, root: str | Path):
+        self._root = Path(root)
+        if not self._root.exists():
+            raise FileNotFoundError(f"Prebuilt mmap dir not found: {self._root}")
+        self._X = _load_ragged_mmap(self._root / "X")
+        self._target = _load_ragged_mmap(self._root / "target")
+        self._weight = _load_ragged_mmap(self._root / "weight")
+        self._labels = np.load(self._root / "labels.npy")
+        self._train_inds = np.load(self._root / "train_inds.npy")
+        self._test_inds = np.load(self._root / "test_inds.npy")
+        val_path = self._root / "val_inds.npy"
+        self._val_inds = np.load(val_path) if val_path.exists() else np.array([], dtype=np.int64)
+        meta_path = self._root / "meta.json"
+        if meta_path.exists():
+            import json
+            with open(meta_path) as f:
+                meta = json.load(f)
+            self._pos_weight = float(meta.get("pos_weight", 1.0))
+            self._neg_weight = float(meta.get("neg_weight", 1.0))
+        else:
+            self._pos_weight = 1.0
+            self._neg_weight = 1.0
+
+    def __len__(self) -> int:
+        return len(self._X)
+
+    def __getitem__(self, index: int):
+        X = np.ascontiguousarray(self._X[index]).astype(np.float32)
+        target = np.asarray(self._target[index], dtype=np.float32).copy()
+        weight = np.asarray(self._weight[index], dtype=np.float32).copy()
+        return (
+            torch.from_numpy(X),
+            torch.from_numpy(target),
+            torch.from_numpy(weight),
+        )
+
+    @property
+    def seq_has_disrupt(self) -> np.ndarray:
+        return self._labels
+
+    def get_split_indices(self, split: str) -> np.ndarray:
+        if split == "train":
+            return self._train_inds
+        if split == "test":
+            return self._test_inds
+        if split == "val":
+            return self._val_inds
+        raise ValueError(f"Unknown split: {split}")
+
+    @property
+    def pos_weight(self) -> float:
+        return self._pos_weight
+
+    @property
+    def neg_weight(self) -> float:
+        return self._neg_weight
+
+    def _compute_class_weights(self, indices: Optional[np.ndarray] = None):
+        """No-op; weights are fixed from preprocessing."""
+        pass
+
+
+class PrebuiltPerSplitSubseqDataset:
+    """
+    Prebuilt dataset for per-split memmap layout (e.g. preprocessing_mmap_ecei_mc.ipynb):
+    root/train/X, root/train/target, root/train/weight, root/train/labels.npy, and same for val, test.
+    Presents a unified view so __getitem__(i) and get_split_indices work like PrebuiltOriginalSubseqDataset.
+    Use this to train on the 71k memmap directly without building a separate 5k memmap.
+    Optional decimate_factor > 1: take every decimate_factor-th time step (data and labels) for 1/N-length training.
+    """
+
+    def __init__(self, root: str | Path, decimate_factor: int = 1):
+        self._root = Path(root)
+        self._decimate = max(1, int(decimate_factor))
+        if not self._root.exists():
+            raise FileNotFoundError(f"Prebuilt mmap dir not found: {self._root}")
+        for split in ("train", "val", "test"):
+            if not (self._root / split / "X").exists():
+                raise FileNotFoundError(f"Per-split layout expected: {self._root / split / 'X'} not found")
+        self._splits = {}
+        for split in ("train", "val", "test"):
+            sub = self._root / split
+            self._splits[split] = {
+                "X": _load_ragged_mmap(sub / "X"),
+                "target": _load_ragged_mmap(sub / "target"),
+                "weight": _load_ragged_mmap(sub / "weight"),
+                "labels": np.load(sub / "labels.npy"),
+            }
+        self._n_train = len(self._splits["train"]["labels"])
+        self._n_val = len(self._splits["val"]["labels"])
+        self._n_test = len(self._splits["test"]["labels"])
+        self._labels = np.concatenate([
+            self._splits["train"]["labels"],
+            self._splits["val"]["labels"],
+            self._splits["test"]["labels"],
+        ])
+        meta_path = self._root / "meta.json"
+        if meta_path.exists():
+            import json
+            with open(meta_path) as f:
+                meta = json.load(f)
+            self._pos_weight = float(meta.get("pos_weight", 1.0))
+            self._neg_weight = float(meta.get("neg_weight", 1.0))
+        else:
+            self._pos_weight = 1.0
+            self._neg_weight = 1.0
+
+    def __len__(self) -> int:
+        return self._n_train + self._n_val + self._n_test
+
+    def _get_split_and_local(self, index: int):
+        if index < self._n_train:
+            return "train", index
+        if index < self._n_train + self._n_val:
+            return "val", index - self._n_train
+        return "test", index - self._n_train - self._n_val
+
+    def __getitem__(self, index: int):
+        split, local = self._get_split_and_local(index)
+        d = self._splits[split]
+        X = np.ascontiguousarray(d["X"][local]).astype(np.float32)
+        target = np.asarray(d["target"][local], dtype=np.float32).copy()
+        weight = np.asarray(d["weight"][local], dtype=np.float32).copy()
+        if self._decimate > 1:
+            # Decimate on the time axis (last dim); X may be (C, T) or (20, 8, T).
+            # Note: we already read the full segment above, so I/O is ~decimate_factor× heavier
+            # than needed. For faster loading, use a pre-decimated memmap (build_decimated_1_10_mmap.py)
+            # and decimate_factor=1.
+            X = X[..., ::self._decimate].copy()
+            target = target[::self._decimate].copy()
+            weight = weight[::self._decimate].copy()
+        return (
+            torch.from_numpy(X),
+            torch.from_numpy(target),
+            torch.from_numpy(weight),
+        )
+
+    @property
+    def seq_has_disrupt(self) -> np.ndarray:
+        return self._labels
+
+    def get_split_indices(self, split: str) -> np.ndarray:
+        if split == "train":
+            return np.arange(self._n_train, dtype=np.int64)
+        if split == "val":
+            return np.arange(self._n_train, self._n_train + self._n_val, dtype=np.int64)
+        if split == "test":
+            return np.arange(self._n_train + self._n_val, len(self), dtype=np.int64)
+        raise ValueError(f"Unknown split: {split}")
+
+    @property
+    def pos_weight(self) -> float:
+        return self._pos_weight
+
+    @property
+    def neg_weight(self) -> float:
+        return self._neg_weight
+
+    def _compute_class_weights(self, indices: Optional[np.ndarray] = None):
+        pass
