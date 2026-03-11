@@ -788,6 +788,13 @@ def main():
         args.input_channels = int(np.prod(sample_X.shape[:-1]))
         if rank == 0:
             log(rank, f'  Inferred input_channels={args.input_channels} from prebuilt memmap (shape {tuple(sample_X.shape)})')
+        # Scale dilation schedule and kernel for decimated time axis (1 step = decimate original steps)
+        if decimate > 1:
+            args.nrecept_target = max(100, args.nrecept_target // decimate)
+            args.kernel_size = max(2, (args.kernel_size + decimate - 1) // decimate)
+            args.dilation_base = max(1, args.dilation_base // decimate)
+            if rank == 0:
+                log(rank, f'  Decimate factor {decimate}: nrecept_target={args.nrecept_target}, kernel_size={args.kernel_size}, dilation_base={args.dilation_base}')
 
     # ── Build model ──────────────────────────────────────────────────────
     model, nrecept, dilation_sizes = build_model(
