@@ -158,6 +158,7 @@ class UNet2DAdaLN(nn.Module):
         t_disrupt: torch.Tensor,
     ) -> torch.Tensor:
         B = x.shape[0]
+        spatial_in = x.shape[2:]  # (H, W) to restore at output
         t_emb = sinusoidal_embedding(t, self.time_embed_dim)
         t_emb = self.time_embed(t_emb)
         cond_emb = self._embed_condition(class_id, t_disrupt)
@@ -171,6 +172,11 @@ class UNet2DAdaLN(nn.Module):
         x = self.mid(x, cond)
         for block, skip in zip(self.up, reversed(skips)):
             x = block(x, skip, cond)
+        # Decoder has 4 levels; output is 2x smaller than input. Upsample to input size.
+        if x.shape[2:] != spatial_in:
+            x = torch.nn.functional.interpolate(
+                x, size=spatial_in, mode="bilinear", align_corners=False
+            )
         x = self.norm_out(x)
         x = torch.nn.functional.silu(x)
         return self.conv_out(x)
