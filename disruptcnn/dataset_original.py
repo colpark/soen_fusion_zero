@@ -356,11 +356,18 @@ class EceiDatasetOriginal(data.Dataset):
             self.disrupt_idx[nondisrupt] = -1000
             self.zero_idx = (self.zero_idx // self.data_step).astype(np.int64)
             self.nsub = max(1, _nsub // self.data_step)
-            self.nrecept = max(1, _nrecept // self.data_step)
             # Optional extra decimation when file is 100k: read every decimate_extra-th sample -> 10k
             step_extra = int(decimate_extra) if decimate_extra not in (None, 0) else 1
             self._step_in_getitem = step_extra
-            # nsub/nrecept stay in file space for shots2seqs tiling; output length = (stop-start)//step_extra
+            if step_extra > 1:
+                # Tiling in file space: use nrecept so stride = nsub - nrecept + 1 matches output stride in file units
+                # output_stride = (nsub//step_extra) - (output_recept) + 1; file_stride = output_stride * step_extra
+                output_recept = max(1, _nrecept // self.data_step)
+                file_stride = ((self.nsub // step_extra) - output_recept + 1) * step_extra
+                self.nrecept = max(1, self.nsub - file_stride + 1)
+            else:
+                self.nrecept = max(1, _nrecept // self.data_step)
+            # nsub/nrecept in file space for shots2seqs tiling; output length = (stop-start)//step_extra
         else:
             self._step_in_getitem = self.data_step
             self.nsub = _nsub
@@ -447,27 +454,32 @@ class EceiDatasetOriginal(data.Dataset):
         self.stop_idxi = []
         self.disrupt_idxi = []
         step = self._step_in_getitem
+        # When step > 1 (decimate_extra): tiling in file space so N and stride are in file samples
+        step_loop = 1 if step > 1 else step
         for s in range(len(self.shot)):
-            N = int((self.stop_idx[s] - self.start_idx[s] + 1) / step)
+            if step > 1:
+                N = int(self.stop_idx[s] - self.start_idx[s] + 1)  # segment length in file space
+            else:
+                N = int((self.stop_idx[s] - self.start_idx[s] + 1) / step)
             num_seq_frac = (N - self.nsub) / float(self.nsub - self.nrecept + 1) + 1
             num_seq = np.ceil(num_seq_frac).astype(int)
             if num_seq < 1:
                 num_seq = 1
             Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
             if (self.start_idx[s] > self.zero_idx[s]) and (
-                (self.start_idx[s] - self.zero_idx[s] + 1) > (Nseq - N) * step
+                (self.start_idx[s] - self.zero_idx[s] + 1) > (Nseq - N) * step_loop
             ):
-                self.start_idx[s] -= (Nseq - N) * step
+                self.start_idx[s] -= (Nseq - N) * step_loop
             else:
                 num_seq -= 1
                 Nseq = self.nsub + (num_seq - 1) * (self.nsub - self.nrecept + 1)
-                self.start_idx[s] += (N - Nseq) * step
+                self.start_idx[s] += (N - Nseq) * step_loop
             for m in range(num_seq):
                 start_i = int(
-                    self.start_idx[s] + (m * self.nsub - m * self.nrecept + m) * step
+                    self.start_idx[s] + (m * self.nsub - m * self.nrecept + m) * step_loop
                 )
                 stop_i = int(
-                    self.start_idx[s] + ((m + 1) * self.nsub - m * self.nrecept + m) * step
+                    self.start_idx[s] + ((m + 1) * self.nsub - m * self.nrecept + m) * step_loop
                 )
                 self.shot_idxi.append(s)
                 self.start_idxi.append(start_i)
@@ -495,6 +507,9 @@ class EceiDatasetOriginal(data.Dataset):
             Nnondisrupt = N - Ndisrupt
             self.pos_weight = 0.5 * N / max(Ndisrupt, 1)
             self.neg_weight = 0.5 * N / max(Nnondisrupt, 1)
+            # Avoid zero or extreme weights (e.g. when very few samples) to prevent BCE explosion
+            self.pos_weight = max(1e-6, min(float(self.pos_weight), 1e6))
+            self.neg_weight = max(1e-6, min(float(self.neg_weight), 1e6))
         else:
             self.pos_weight = 1.0
             self.neg_weight = 1.0
