@@ -3,14 +3,18 @@
 #  TCN baseline: 1D PCA decimated data (no memmap) — shape (1, 7813).
 #
 #  Data: decimated H5 at 100k in dsrpt_decimated_pca1; decimate 10x (--decimate-extra 10) -> 10k, 7813 samples.
+#  EceiDatasetOriginal (dataset_original.py) slices offsets to match the LFS read so (C,T) stays (1,7813);
+#  without that, (1,7813)-(1,600000) would broadcast to wrong shape.
 #  Norm stats: norm_stats_pca1.npz (in soen_fusion_zero on remote).
-#  Model: same as run_tcn_baseline_160_original_instancenorm_subsample.sh (1 input ch, InstanceNorm; decimate scaling applied). Sequence length 7813.
+#  Model: same as run_tcn_baseline_160_original_instancenorm_subsample.sh (1 input ch, InstanceNorm; decimate scaling applied).
 #
-#  Usage (from soen_fusion_zero on remote):
+#  Run from soen_fusion_zero project dir (e.g. ~/workspace/Temporary/dpark1/scratch/soen_fusion_zero).
+#  Usage:
 #      bash run_tcn_baseline_pca1_decimated_subsample.sh
 #      bash run_tcn_baseline_pca1_decimated_subsample.sh --batch-size 16
 #  Override data/norm paths:
 #      DECIMATED_ROOT=/path/to/dsrpt_decimated_pca1 CLEAR_ROOT=/path/to/clear_decimated_pca1 NORM_STATS=./norm_stats_pca1.npz bash run_tcn_baseline_pca1_decimated_subsample.sh
+#  To verify input pipeline: python debug_pca1_input_shapes.py [--decimated-root ...] [--norm-stats ...]
 # ═══════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
