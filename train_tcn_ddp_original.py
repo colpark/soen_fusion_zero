@@ -811,6 +811,15 @@ def main():
             args.dilation_base = max(1, args.dilation_base // decimate)
             if rank == 0:
                 log(rank, f'  Decimate factor {decimate}: nrecept_target={args.nrecept_target}, kernel_size={args.kernel_size}, dilation_base={args.dilation_base}')
+    else:
+        # When using original dataset with decimate_extra (e.g. PCA1 100k->10k), same scaling as prebuilt decimate
+        decimate_extra = getattr(args, 'decimate_extra', None) or 1
+        if decimate_extra > 1:
+            args.nrecept_target = max(100, args.nrecept_target // decimate_extra)
+            args.kernel_size = max(2, (args.kernel_size + decimate_extra - 1) // decimate_extra)
+            args.dilation_base = max(1, args.dilation_base // decimate_extra)
+            if rank == 0:
+                log(rank, f'  Decimate extra {decimate_extra}: nrecept_target={args.nrecept_target}, kernel_size={args.kernel_size}, dilation_base={args.dilation_base}')
 
     # ── Build model ──────────────────────────────────────────────────────
     model, nrecept, dilation_sizes = build_model(
