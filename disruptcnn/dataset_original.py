@@ -557,14 +557,20 @@ class EceiDatasetOriginal(data.Dataset):
         with h5py.File(filename, "r") as f:
             if np.all(self.offsets[..., shot_index] == 0) and "offsets" in f:
                 self.offsets[..., shot_index] = f["offsets"][...]
-            LFS_slice = f["LFS"][..., start:stop][..., ::step]
+            LFS_slice = np.asarray(f["LFS"][..., start:stop][..., ::step], dtype=np.float64)
             # Slice offsets the same way so shapes match (avoid (1, T) - (1, LFS_len) broadcasting to (1, LFS_len, T))
             off = self.offsets[..., shot_index]
             if off.ndim >= 1 and off.shape[-1] > 1:
-                off_slice = off[..., start:stop][..., ::step]
+                # Offsets may be shorter than this file's segment (built from first file); clamp to avoid (1,0)
+                t_len = off.shape[-1]
+                s2 = min(stop, t_len)
+                s1 = min(start, s2)
+                off_slice = off[..., s1:s2][..., ::step]
+                if off_slice.shape != LFS_slice.shape:
+                    off_slice = np.zeros_like(LFS_slice)
             else:
                 off_slice = off  # per-channel only, will broadcast
-            X = np.asarray(LFS_slice, dtype=np.float64) - off_slice
+            X = LFS_slice - off_slice
         if self.normalize:
             X = (X - self.normalize_mean[..., np.newaxis]) / self.normalize_std[..., np.newaxis]
         # Ensure (C, T) layout: if H5 stores (T, C) e.g. (7813, 1), transpose to (1, T)
