@@ -303,6 +303,7 @@ class EceiDatasetOriginal(data.Dataset):
         decimated_root: Optional[str] = None,
         clear_decimated_root: Optional[str] = None,
         norm_stats_path: Optional[str] = None,
+        decimate_extra: Optional[int] = None,
     ):
         self.root = root
         self._decimated_root = Path(decimated_root) if decimated_root and str(decimated_root).strip() else None
@@ -354,9 +355,12 @@ class EceiDatasetOriginal(data.Dataset):
             self.disrupt_idx = (self.disrupt_idx // self.data_step).astype(np.int64)
             self.disrupt_idx[nondisrupt] = -1000
             self.zero_idx = (self.zero_idx // self.data_step).astype(np.int64)
-            self._step_in_getitem = 1
             self.nsub = max(1, _nsub // self.data_step)
             self.nrecept = max(1, _nrecept // self.data_step)
+            # Optional extra decimation when file is 100k: read every decimate_extra-th sample -> 10k
+            step_extra = int(decimate_extra) if decimate_extra not in (None, 0) else 1
+            self._step_in_getitem = step_extra
+            # nsub/nrecept stay in file space for shots2seqs tiling; output length = (stop-start)//step_extra
         else:
             self._step_in_getitem = self.data_step
             self.nsub = _nsub
@@ -543,6 +547,9 @@ class EceiDatasetOriginal(data.Dataset):
             )
         if self.normalize:
             X = (X - self.normalize_mean[..., np.newaxis]) / self.normalize_std[..., np.newaxis]
+        # Ensure (C, T) layout: if H5 stores (T, C) e.g. (7813, 1), transpose to (1, T)
+        if X.ndim == 2 and X.shape[-1] < X.shape[0]:
+            X = X.T
         return X
 
     def __len__(self) -> int:
@@ -630,7 +637,8 @@ class OriginalStyleDatasetForDDP:
         self._inner = inner
         if not hasattr(inner, "train_inds"):
             inner.train_val_test_split()
-        self._T_fixed = int(inner.nsub)
+        step = getattr(inner, "_step_in_getitem", 1)
+        self._T_fixed = int(inner.nsub // step) if step > 1 else int(inner.nsub)
 
     def __len__(self) -> int:
         return len(self._inner)

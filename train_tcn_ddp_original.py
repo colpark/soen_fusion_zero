@@ -430,7 +430,7 @@ def log(rank: int, msg: str):
 # ═════════════════════════════════════════════════════════════════════════
 
 def train_one_epoch(model, loader, optimizer, nrecept, device, epoch,
-                    n_epochs, clip, rank, log_every=5):
+                    n_epochs, clip, rank, log_every=5, input_channels=None):
     model.train()
     n_batches = len(loader)
     running_loss = 0.0
@@ -441,6 +441,9 @@ def train_one_epoch(model, loader, optimizer, nrecept, device, epoch,
     for batch_idx, (X, target, _weight) in enumerate(loader):
         B = X.shape[0]
         X = X.view(B, -1, X.shape[-1]).to(device)
+        # Ensure (B, C, T): if dataset returned (B, T, C) e.g. (B, 7813, 1), permute to (B, 1, 7813)
+        if input_channels is not None and X.dim() == 3 and X.shape[2] == input_channels and X.shape[1] != input_channels:
+            X = X.permute(0, 2, 1)
         target = target.to(device)
 
         optimizer.zero_grad()
@@ -503,7 +506,7 @@ def train_one_epoch(model, loader, optimizer, nrecept, device, epoch,
 # ═════════════════════════════════════════════════════════════════════════
 
 @torch.no_grad()
-def evaluate(model, loader, nrecept, device, thresholds=None):
+def evaluate(model, loader, nrecept, device, thresholds=None, input_channels=None):
     model.eval()
     if thresholds is None:
         thresholds = np.linspace(0.05, 0.95, 19)
@@ -521,6 +524,8 @@ def evaluate(model, loader, nrecept, device, thresholds=None):
     for X, target, _weight in loader:
         B = X.shape[0]
         X = X.view(B, -1, X.shape[-1]).to(device)
+        if input_channels is not None and X.dim() == 3 and X.shape[2] == input_channels and X.shape[1] != input_channels:
+            X = X.permute(0, 2, 1)
         target = target.to(device)
 
         output = model(X)
@@ -620,6 +625,10 @@ def parse_args():
                    help='Use pre-saved subsequences from preprocessing_mmap.ipynb (mmap_ninja); skips H5 loading')
     g.add_argument('--decimate-factor', type=int, default=1,
                    help='Take every Nth time step from prebuilt memmap (1=full length; 10 => 1/10 length for data and labels)')
+    g.add_argument('--decimate-extra', type=int, default=None,
+                   help='When using decimated_root: read every Nth sample (e.g. 10 for 100k->10k). Requires nsub in file space so output length = (nsub//data_step)//decimate_extra')
+    g.add_argument('--no-short-sequence-cap', action='store_true',
+                   help='Keep full dilation/layer profile (nrecept_target, dilation_base, kernel_size) as for long sequences; do not cap for short T_sub (e.g. for PCA1 matching 160ch model)')
 
     # ── model ──
     g = p.add_argument_group('model')
@@ -724,8 +733,12 @@ def main():
             args.norm_stats = str(project_norm)  # fail later with clear path in error
 
     # ── Short-sequence dilation (e.g. 5k): cap receptive field and use smaller base ──
-    T_sub = args.nsub // args.data_step  # effective sequence length in time steps
-    if T_sub < 15_000 and args.nrecept_target > T_sub:
+    T_sub = args.nsub // args.data_step  # effective sequence length in time steps (file space when decimated_root)
+    decimate_extra = getattr(args, 'decimate_extra', None) or 1
+    if decimate_extra > 1:
+        T_sub = T_sub // decimate_extra  # output space after extra decimation (e.g. 100k -> 10k)
+    skip_short_cap = getattr(args, 'no_short_sequence_cap', False)
+    if not skip_short_cap and T_sub < 15_000 and args.nrecept_target > T_sub:
         cap = max(500, T_sub // 2)
         if args.nrecept_target > cap:
             args.nrecept_target = cap
@@ -752,7 +765,10 @@ def main():
     if rank == 0 and backend == 'gloo':
         print('  [DDP] Using backend=gloo (NCCL not available)')
     if rank == 0 and T_sub < 15_000:
-        log(rank, f'  Short-sequence dilation: T_sub={T_sub}, nrecept_target={args.nrecept_target}, dilation_base={args.dilation_base}')
+        if skip_short_cap:
+            log(rank, f'  T_sub={T_sub} (short) but --no-short-sequence-cap: keeping full dilation nrecept_target={args.nrecept_target}, dilation_base={args.dilation_base}')
+        else:
+            log(rank, f'  Short-sequence dilation: T_sub={T_sub}, nrecept_target={args.nrecept_target}, dilation_base={args.dilation_base}')
     world_size = dist.get_world_size()
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     device = torch.device(f'cuda:{local_rank}')
@@ -847,6 +863,7 @@ def main():
             decimated_root=args.decimated_root,
             clear_decimated_root=getattr(args, 'clear_decimated_root', None),
             norm_stats_path=args.norm_stats,
+            decimate_extra=getattr(args, 'decimate_extra', None),
         )
         ds = OriginalStyleDatasetForDDP(inner_ds)
         if rank == 0:
@@ -1086,6 +1103,7 @@ def main():
             model, train_loader, optimizer, nrecept, device,
             epoch=epoch, n_epochs=args.epochs, clip=args.clip,
             rank=rank, log_every=args.log_every,
+            input_channels=args.input_channels,
         )
         global_step += len(train_loader)
 
@@ -1096,7 +1114,7 @@ def main():
                 scheduler_warmup.step(global_step)
 
         # ── VALIDATE ─────────────────────────────────────────────────────
-        val_metrics = evaluate(model, val_loader, nrecept, device)
+        val_metrics = evaluate(model, val_loader, nrecept, device, input_channels=args.input_channels)
 
         if scheduler_cosine is None and global_step > warmup_iters:
             scheduler_plateau.step(val_metrics['loss'])
