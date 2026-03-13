@@ -553,13 +553,18 @@ class EceiDatasetOriginal(data.Dataset):
         """Read LFS slice [start_idxi:stop_idxi] with step; no clamping (matches original)."""
         shot_index = self.shot_idxi[index]
         filename = self._filename(shot_index)
+        start, stop, step = self.start_idxi[index], self.stop_idxi[index], self._step_in_getitem
         with h5py.File(filename, "r") as f:
             if np.all(self.offsets[..., shot_index] == 0) and "offsets" in f:
                 self.offsets[..., shot_index] = f["offsets"][...]
-            X = (
-                f["LFS"][..., self.start_idxi[index] : self.stop_idxi[index]][..., :: self._step_in_getitem]
-                - self.offsets[..., shot_index][..., np.newaxis]
-            )
+            LFS_slice = f["LFS"][..., start:stop][..., ::step]
+            # Slice offsets the same way so shapes match (avoid (1, T) - (1, LFS_len) broadcasting to (1, LFS_len, T))
+            off = self.offsets[..., shot_index]
+            if off.ndim >= 1 and off.shape[-1] > 1:
+                off_slice = off[..., start:stop][..., ::step]
+            else:
+                off_slice = off  # per-channel only, will broadcast
+            X = np.asarray(LFS_slice, dtype=np.float64) - off_slice
         if self.normalize:
             X = (X - self.normalize_mean[..., np.newaxis]) / self.normalize_std[..., np.newaxis]
         # Ensure (C, T) layout: if H5 stores (T, C) e.g. (7813, 1), transpose to (1, T)
