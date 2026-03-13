@@ -737,7 +737,8 @@ def main():
     decimate_extra = getattr(args, 'decimate_extra', None) or 1
     if decimate_extra > 1:
         T_sub = T_sub // decimate_extra  # output space after extra decimation (e.g. 100k -> 10k)
-    skip_short_cap = getattr(args, 'no_short_sequence_cap', False)
+    # When decimate_extra is set (e.g. PCA1), use same scaling as prebuilt decimate only — skip short-sequence cap so RF matches run_tcn_baseline_160_original_instancenorm_subsample
+    skip_short_cap = getattr(args, 'no_short_sequence_cap', False) or (decimate_extra > 1)
     if not skip_short_cap and T_sub < 15_000 and args.nrecept_target > T_sub:
         cap = max(500, T_sub // 2)
         if args.nrecept_target > cap:
@@ -766,7 +767,8 @@ def main():
         print('  [DDP] Using backend=gloo (NCCL not available)')
     if rank == 0 and T_sub < 15_000:
         if skip_short_cap:
-            log(rank, f'  T_sub={T_sub} (short) but --no-short-sequence-cap: keeping full dilation nrecept_target={args.nrecept_target}, dilation_base={args.dilation_base}')
+            reason = 'decimate_extra' if decimate_extra > 1 else '--no-short-sequence-cap'
+            log(rank, f'  T_sub={T_sub} (short) but {reason}: use decimate scaling only → nrecept_target={args.nrecept_target}, dilation_base={args.dilation_base}')
         else:
             log(rank, f'  Short-sequence dilation: T_sub={T_sub}, nrecept_target={args.nrecept_target}, dilation_base={args.dilation_base}')
     world_size = dist.get_world_size()
