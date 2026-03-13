@@ -441,9 +441,12 @@ def train_one_epoch(model, loader, optimizer, nrecept, device, epoch,
     for batch_idx, (X, target, _weight) in enumerate(loader):
         B = X.shape[0]
         X = X.view(B, -1, X.shape[-1]).to(device)
-        # Ensure (B, C, T): if dataset returned (B, T, C) e.g. (B, 7813, 1), permute to (B, 1, 7813)
-        if input_channels is not None and X.dim() == 3 and X.shape[2] == input_channels and X.shape[1] != input_channels:
-            X = X.permute(0, 2, 1)
+        # Ensure (B, C, T): (B, T, C) with C=1 -> permute; or (B, wrong_ch, T) with input_channels=1 -> take first channel
+        if input_channels is not None and X.dim() == 3:
+            if X.shape[2] == input_channels and X.shape[1] != input_channels:
+                X = X.permute(0, 2, 1)  # (B, T, C) -> (B, C, T)
+            elif input_channels == 1 and X.shape[1] != 1:
+                X = X[:, 0:1, :]  # (B, wrong_dim, T) e.g. (B, 200000, 7813) -> (B, 1, 7813)
         target = target.to(device)
 
         optimizer.zero_grad()
@@ -524,8 +527,11 @@ def evaluate(model, loader, nrecept, device, thresholds=None, input_channels=Non
     for X, target, _weight in loader:
         B = X.shape[0]
         X = X.view(B, -1, X.shape[-1]).to(device)
-        if input_channels is not None and X.dim() == 3 and X.shape[2] == input_channels and X.shape[1] != input_channels:
-            X = X.permute(0, 2, 1)
+        if input_channels is not None and X.dim() == 3:
+            if X.shape[2] == input_channels and X.shape[1] != input_channels:
+                X = X.permute(0, 2, 1)
+            elif input_channels == 1 and X.shape[1] != 1:
+                X = X[:, 0:1, :]
         target = target.to(device)
 
         output = model(X)
